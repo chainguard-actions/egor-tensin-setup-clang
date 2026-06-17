@@ -1,0 +1,87 @@
+name: Test install clang without cc symlinks
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install PowerShell
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -yq --no-install-recommends powershell || true
+          if ! command -v pwsh &>/dev/null; then
+            sudo snap install powershell --classic || true
+          fi
+          pwsh --version
+
+      - id: action
+        uses: .
+        with:
+          version: latest
+          platform: x64
+          cc: '0'
+
+      - name: Assert clang output is set
+        env:
+          CLANG_OUT: ${{ steps.action.outputs.clang }}
+        run: |
+          echo "clang output: $CLANG_OUT"
+          if [ -z "$CLANG_OUT" ]; then
+            echo "FAIL: clang output is empty"
+            exit 1
+          fi
+          echo "PASS: clang output is '$CLANG_OUT'"
+
+      - name: Assert clangxx output is set
+        env:
+          CLANGXX_OUT: ${{ steps.action.outputs.clangxx }}
+        run: |
+          echo "clangxx output: $CLANGXX_OUT"
+          if [ -z "$CLANGXX_OUT" ]; then
+            echo "FAIL: clangxx output is empty"
+            exit 1
+          fi
+          echo "PASS: clangxx output is '$CLANGXX_OUT'"
+
+      - name: Assert clang binary is available
+        env:
+          CLANG_BIN: ${{ steps.action.outputs.clang }}
+        run: |
+          echo "Checking for clang binary: $CLANG_BIN"
+          if ! command -v "$CLANG_BIN" &>/dev/null; then
+            echo "FAIL: $CLANG_BIN not found in PATH"
+            exit 1
+          fi
+          echo "PASS: $CLANG_BIN is available"
+
+      - name: Assert clang++ binary is available
+        env:
+          CLANGXX_BIN: ${{ steps.action.outputs.clangxx }}
+        run: |
+          echo "Checking for clang++ binary: $CLANGXX_BIN"
+          if ! command -v "$CLANGXX_BIN" &>/dev/null; then
+            echo "FAIL: $CLANGXX_BIN not found in PATH"
+            exit 1
+          fi
+          echo "PASS: $CLANGXX_BIN is available"
+
+      - name: Verify clang can compile a simple program
+        env:
+          CLANG_BIN: ${{ steps.action.outputs.clang }}
+        run: |
+          echo "Testing clang compilation"
+          cat > /tmp/hello.c << 'EOF'
+          #include <stdio.h>
+          int main() { printf("hello\n"); return 0; }
+          EOF
+          "$CLANG_BIN" /tmp/hello.c -o /tmp/hello
+          OUTPUT=$(/tmp/hello)
+          echo "Output: $OUTPUT"
+          if [ "$OUTPUT" != "hello" ]; then
+            echo "FAIL: expected 'hello' but got '$OUTPUT'"
+            exit 1
+          fi
+          echo "PASS: clang compiled and ran successfully"
