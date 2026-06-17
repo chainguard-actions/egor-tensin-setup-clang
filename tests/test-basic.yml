@@ -1,0 +1,86 @@
+name: Test basic usage (latest clang)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install PowerShell
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -yq --no-install-recommends powershell || true
+          # Try snap if apt fails
+          if ! command -v pwsh > /dev/null 2>&1; then
+            sudo snap install powershell --classic || true
+          fi
+          # Try direct install from Microsoft
+          if ! command -v pwsh > /dev/null 2>&1; then
+            wget -q https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -O /tmp/packages-microsoft-prod.deb
+            sudo dpkg -i /tmp/packages-microsoft-prod.deb
+            sudo apt-get update -q
+            sudo apt-get install -yq powershell
+          fi
+          pwsh --version
+      - id: action
+        uses: .
+        with:
+          version: latest
+          platform: x64
+          cc: '1'
+      - name: Assert clang output is set
+        env:
+          CLANG: ${{ steps.action.outputs.clang }}
+        run: |
+          echo "clang output: $CLANG"
+          if [ -z "$CLANG" ]; then
+            echo "FAIL: clang output is empty"
+            exit 1
+          fi
+          echo "PASS: clang output = $CLANG"
+      - name: Assert clangxx output is set
+        env:
+          CLANGXX: ${{ steps.action.outputs.clangxx }}
+        run: |
+          echo "clang++ output: $CLANGXX"
+          if [ -z "$CLANGXX" ]; then
+            echo "FAIL: clangxx output is empty"
+            exit 1
+          fi
+          echo "PASS: clangxx output = $CLANGXX"
+      - name: Assert clang binary is executable
+        env:
+          CLANG: ${{ steps.action.outputs.clang }}
+        run: |
+          echo "Checking that $CLANG is available..."
+          if ! command -v "$CLANG" > /dev/null 2>&1; then
+            echo "FAIL: $CLANG not found in PATH"
+            exit 1
+          fi
+          echo "PASS: $CLANG is available at $(command -v $CLANG)"
+      - name: Assert clang++ binary is executable
+        env:
+          CLANGXX: ${{ steps.action.outputs.clangxx }}
+        run: |
+          echo "Checking that $CLANGXX is available..."
+          if ! command -v "$CLANGXX" > /dev/null 2>&1; then
+            echo "FAIL: $CLANGXX not found in PATH"
+            exit 1
+          fi
+          echo "PASS: $CLANGXX is available at $(command -v $CLANGXX)"
+      - name: Assert cc symlink is created
+        run: |
+          echo "Checking cc symlink..."
+          if ! command -v cc > /dev/null 2>&1; then
+            echo "FAIL: cc not found in PATH"
+            exit 1
+          fi
+          echo "PASS: cc is available at $(command -v cc)"
+      - name: Assert c++ symlink is created
+        run: |
+          echo "Checking c++ symlink..."
+          if ! command -v c++ > /dev/null 2>&1; then
+            echo "FAIL: c++ not found in PATH"
+            exit 1
+          fi
+          echo "PASS: c++ is available at $(command -v c++)"

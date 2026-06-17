@@ -1,0 +1,63 @@
+name: Test specific clang version
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install PowerShell
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -yq --no-install-recommends powershell || true
+          if ! command -v pwsh > /dev/null 2>&1; then
+            wget -q https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -O /tmp/packages-microsoft-prod.deb
+            sudo dpkg -i /tmp/packages-microsoft-prod.deb
+            sudo apt-get update -q
+            sudo apt-get install -yq powershell
+          fi
+          pwsh --version
+      - id: action
+        uses: .
+        with:
+          version: '15'
+          platform: x64
+          cc: '1'
+      - name: Assert clang output contains version
+        env:
+          CLANG: ${{ steps.action.outputs.clang }}
+        run: |
+          echo "clang output: $CLANG"
+          if [ -z "$CLANG" ]; then
+            echo "FAIL: clang output is empty"
+            exit 1
+          fi
+          if [[ "$CLANG" != *"15"* ]]; then
+            echo "FAIL: expected clang output to contain '15', got '$CLANG'"
+            exit 1
+          fi
+          echo "PASS: clang output = $CLANG"
+      - name: Assert clangxx output contains version
+        env:
+          CLANGXX: ${{ steps.action.outputs.clangxx }}
+        run: |
+          echo "clang++ output: $CLANGXX"
+          if [ -z "$CLANGXX" ]; then
+            echo "FAIL: clangxx output is empty"
+            exit 1
+          fi
+          if [[ "$CLANGXX" != *"15"* ]]; then
+            echo "FAIL: expected clangxx output to contain '15', got '$CLANGXX'"
+            exit 1
+          fi
+          echo "PASS: clangxx output = $CLANGXX"
+      - name: Assert versioned clang binary is available
+        env:
+          CLANG: ${{ steps.action.outputs.clang }}
+        run: |
+          echo "Checking that $CLANG is available..."
+          if ! command -v "$CLANG" > /dev/null 2>&1; then
+            echo "FAIL: $CLANG not found in PATH"
+            exit 1
+          fi
+          echo "PASS: $CLANG is available at $(command -v $CLANG)"
