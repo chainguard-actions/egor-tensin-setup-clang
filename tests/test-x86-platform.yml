@@ -1,0 +1,81 @@
+name: Test x86 platform (32-bit)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install PowerShell
+        run: |
+          if ! command -v pwsh > /dev/null 2>&1; then
+            echo "Installing PowerShell..."
+            sudo apt-get update -q
+            sudo apt-get install -yq --no-install-recommends \
+              wget apt-transport-https software-properties-common
+            wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
+            sudo dpkg -i packages-microsoft-prod.deb
+            sudo apt-get update -q
+            sudo apt-get install -yq powershell
+          else
+            echo "pwsh already available: $(pwsh --version)"
+          fi
+      - id: action
+        uses: .
+        with:
+          version: latest
+          platform: x86
+          cc: 1
+      - name: Assert clang output equals 'clang' for latest
+        env:
+          CLANG_OUT: ${{ steps.action.outputs.clang }}
+        run: |
+          echo "clang output: $CLANG_OUT"
+          if [ -z "$CLANG_OUT" ]; then
+            echo "FAIL: clang output is empty"
+            exit 1
+          fi
+          if [ "$CLANG_OUT" != "clang" ]; then
+            echo "FAIL: expected 'clang' but got '$CLANG_OUT'"
+            exit 1
+          fi
+          echo "PASS: clang output = $CLANG_OUT"
+      - name: Assert clangxx output equals 'clang++' for latest
+        env:
+          CLANGXX_OUT: ${{ steps.action.outputs.clangxx }}
+        run: |
+          echo "clangxx output: $CLANGXX_OUT"
+          if [ -z "$CLANGXX_OUT" ]; then
+            echo "FAIL: clangxx output is empty"
+            exit 1
+          fi
+          if [ "$CLANGXX_OUT" != "clang++" ]; then
+            echo "FAIL: expected 'clang++' but got '$CLANGXX_OUT'"
+            exit 1
+          fi
+          echo "PASS: clangxx output = $CLANGXX_OUT"
+      - name: Assert clang binary is available
+        run: |
+          echo "Checking for clang binary"
+          if ! command -v clang > /dev/null 2>&1; then
+            echo "FAIL: clang not found in PATH"
+            exit 1
+          fi
+          echo "PASS: clang found at $(command -v clang)"
+      - name: Assert g++-multilib is installed for x86 platform
+        run: |
+          echo "Checking for g++-multilib (required for x86 cross-compilation)"
+          if ! dpkg -l g++-multilib > /dev/null 2>&1; then
+            echo "FAIL: g++-multilib not installed"
+            exit 1
+          fi
+          echo "PASS: g++-multilib is installed"
+      - name: Assert cc symlink is set up
+        run: |
+          echo "Checking for cc symlink"
+          if ! command -v cc > /dev/null 2>&1; then
+            echo "FAIL: cc not found in PATH"
+            exit 1
+          fi
+          CC_PATH=$(command -v cc)
+          echo "PASS: cc found at $CC_PATH"

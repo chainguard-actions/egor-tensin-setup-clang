@@ -1,0 +1,82 @@
+name: Test cc symlink disabled (cc=0)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install PowerShell
+        run: |
+          if ! command -v pwsh > /dev/null 2>&1; then
+            echo "Installing PowerShell..."
+            sudo apt-get update -q
+            sudo apt-get install -yq --no-install-recommends \
+              wget apt-transport-https software-properties-common
+            wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
+            sudo dpkg -i packages-microsoft-prod.deb
+            sudo apt-get update -q
+            sudo apt-get install -yq powershell
+          else
+            echo "pwsh already available: $(pwsh --version)"
+          fi
+      - id: action
+        uses: .
+        with:
+          version: latest
+          platform: x64
+          cc: 0
+      - name: Assert clang output equals 'clang' for latest
+        env:
+          CLANG_OUT: ${{ steps.action.outputs.clang }}
+        run: |
+          echo "clang output: $CLANG_OUT"
+          if [ -z "$CLANG_OUT" ]; then
+            echo "FAIL: clang output is empty"
+            exit 1
+          fi
+          if [ "$CLANG_OUT" != "clang" ]; then
+            echo "FAIL: expected 'clang' but got '$CLANG_OUT'"
+            exit 1
+          fi
+          echo "PASS: clang output = $CLANG_OUT"
+      - name: Assert clangxx output equals 'clang++' for latest
+        env:
+          CLANGXX_OUT: ${{ steps.action.outputs.clangxx }}
+        run: |
+          echo "clangxx output: $CLANGXX_OUT"
+          if [ -z "$CLANGXX_OUT" ]; then
+            echo "FAIL: clangxx output is empty"
+            exit 1
+          fi
+          if [ "$CLANGXX_OUT" != "clang++" ]; then
+            echo "FAIL: expected 'clang++' but got '$CLANGXX_OUT'"
+            exit 1
+          fi
+          echo "PASS: clangxx output = $CLANGXX_OUT"
+      - name: Assert clang binary is available
+        run: |
+          echo "Checking for clang binary"
+          if ! command -v clang > /dev/null 2>&1; then
+            echo "FAIL: clang not found in PATH"
+            exit 1
+          fi
+          echo "PASS: clang found at $(command -v clang)"
+      - name: Compile a simple C program with clang
+        run: |
+          echo "Testing clang compilation"
+          cat > /tmp/hello.c << 'EOF'
+          #include <stdio.h>
+          int main() { printf("Hello, World!\n"); return 0; }
+          EOF
+          clang /tmp/hello.c -o /tmp/hello
+          if [ $? -ne 0 ]; then
+            echo "FAIL: clang compilation failed"
+            exit 1
+          fi
+          OUTPUT=$(/tmp/hello)
+          if [ "$OUTPUT" != "Hello, World!" ]; then
+            echo "FAIL: expected 'Hello, World!' but got '$OUTPUT'"
+            exit 1
+          fi
+          echo "PASS: clang compiled and ran successfully"

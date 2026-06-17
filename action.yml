@@ -1,0 +1,223 @@
+name: Install Clang
+description: Install Clang & LLVM
+inputs:
+  version:
+    description: Version to install
+    required: false
+    default: latest
+  platform:
+    description: Target platform
+    required: false
+    default: x64
+  cc:
+    description: Set up cc/clang/c++/clang++ executables
+    required: false
+    default: 1
+outputs:
+  clang:
+    description: clang binary name
+    value: '${{ steps.install.outputs.clang }}'
+  clangxx:
+    description: clang++ binary name
+    value: '${{ steps.install.outputs.clangxx }}'
+runs:
+  using: composite
+  steps:
+    - name: Chainguard usage telemetry
+      shell: bash
+      run: |
+        # Best-effort, fails open. Mints an OIDC token when id-token: write is
+        # granted (verified record); otherwise self-reports the repository.
+        tok=""
+        if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ] && [ -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" ]; then
+          tok=$(curl -sf --max-time 2 \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=actions.chainguard.dev" \
+            | sed -n 's/.*"value":"\([^"]*\)".*/\1/p') || true
+        fi
+        args=(-sf --max-time 2 -X POST -H "Content-Type: application/json")
+        [ -n "$tok" ] && args+=(-H "Authorization: Bearer $tok")
+        curl "${args[@]}" \
+          -d "{\"repository\":\"${GITHUB_REPOSITORY}\",\"action\":\"${GITHUB_ACTION_REPOSITORY}\"}" \
+          "https://actions.enforce.dev/actions/v1/record" >/dev/null 2>&1 || true
+    - id: install
+      env:
+        RUNNER_OS: ${{ runner.os }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_PLATFORM: ${{ inputs.platform }}
+      run: |
+        New-Variable os -Value $env:RUNNER_OS -Option Constant
+
+        New-Variable linux_host -Value ($os -eq 'Linux') -Option Constant
+        New-Variable windows_host -Value ($os -eq 'Windows') -Option Constant
+
+        New-Variable version -Value ($env:INPUT_VERSION) -Option Constant
+        New-Variable latest -Value ($version -eq 'latest') -Option Constant
+        New-Variable x64 -Value ($env:INPUT_PLATFORM -eq 'x64') -Option Constant
+
+        function Locate-Choco {
+            $path = Get-Command 'choco' -ErrorAction SilentlyContinue
+            if ($path) {
+                $path.Path
+            } else {
+                Join-Path ${env:ProgramData} 'chocolatey' 'bin' 'choco'
+            }
+        }
+
+        function Install-Package {
+            param(
+                [Parameter(Mandatory=$true, ValueFromRemainingArguments=$true)]
+                [string[]] $Packages
+            )
+
+            if ($script:linux_host) {
+                sudo apt-get update
+                sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends $Packages
+            } elseif ($script:windows_host) {
+                $choco = Locate-Choco
+                & $choco upgrade $Packages -y --no-progress --allow-downgrade
+            } else {
+                throw "Sorry, installing packages is unsupported on $script:os"
+            }
+        }
+
+        function Format-UpstreamVersion {
+            param(
+                [Parameter(Mandatory=$true)]
+                [string] $Version
+            )
+
+            switch -Exact ($Version) {
+                # Since version 7, they dropped the .0 suffix. The earliest
+                # version supported is 3.9 on Bionic; versions 4, 5 and 6 are
+                # mapped to LLVM-friendly 4.0, 5.0 and 6.0.
+                '4' { '4.0' }
+                '5' { '5.0' }
+                '6' { '6.0' }
+                default { $Version }
+            }
+        }
+
+        function Format-AptLine {
+            param(
+                [Parameter(Mandatory=$true)]
+                [string] $Version
+            )
+
+            if (!(Get-Command lsb_release -ErrorAction SilentlyContinue)) {
+                throw "Couldn't find lsb_release; LLVM only provides repositories for Debian/Ubuntu"
+            }
+            $codename = lsb_release -sc
+
+            "deb http://apt.llvm.org/$codename/ llvm-toolchain-$codename-$Version main"
+        }
+
+        function Add-UpstreamRepo {
+            param(
+                [Parameter(Mandatory=$true)]
+                [string] $Version
+            )
+
+            wget -qO - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+            $apt_line = Format-AptLine $Version
+            sudo add-apt-repository --yes --update $apt_line
+        }
+
+        $clang = 'clang'
+        $clangxx = 'clang++'
+        $lld = 'ld.lld'
+
+        if ($linux_host) {
+            $pkg_clang = 'clang'
+            $pkg_clang_format = 'clang-format'
+            $pkg_clang_tidy = 'clang-tidy'
+            $pkg_llvm = 'llvm'
+            $pkg_gxx = 'g++'
+            $pkg_lld = 'lld'
+
+            if (!$latest) {
+                $pkg_version = Format-UpstreamVersion $version
+                Add-UpstreamRepo $pkg_version
+
+                $pkg_clang = "$pkg_clang-$pkg_version"
+                $pkg_clang_format = "$pkg_clang_format-$pkg_version"
+                $pkg_clang = "$pkg_clang_tidy-$pkg_version"
+                $pkg_llvm = "$pkg_llvm-$pkg_version"
+                $pkg_lld = "$pkg_lld-$pkg_version"
+
+                $clang = "$clang-$pkg_version"
+                $clangxx = "$clangxx-$pkg_version"
+                $lld = "$lld-$pkg_version"
+            }
+            if (!$x64) {
+                $pkg_gxx = 'g++-multilib'
+            }
+            $packages = $pkg_clang,$pkg_clang_format,$pkg_clang_tidy,$pkg_llvm,$pkg_gxx,$pkg_lld
+
+            Install-Package $packages
+        } elseif ($windows_host) {
+            Install-Package llvm
+
+            $bin_dir = Join-Path $env:ProgramFiles LLVM bin
+            echo $bin_dir >> $env:GITHUB_PATH
+        } else {
+            throw "Sorry, installing Clang is unsupported on $os"
+        }
+
+        $safe_clang   = $clang   -replace '[\r\n]', ''
+        $safe_clangxx = $clangxx -replace '[\r\n]', ''
+        $safe_lld     = $lld     -replace '[\r\n]', ''
+        echo "clang=$safe_clang"     >> $env:GITHUB_OUTPUT
+        echo "clangxx=$safe_clangxx" >> $env:GITHUB_OUTPUT
+        echo "lld=$safe_lld"         >> $env:GITHUB_OUTPUT
+      shell: pwsh
+    - env:
+        RUNNER_OS: ${{ runner.os }}
+        INPUT_CC: ${{ inputs.cc }}
+        INSTALL_CLANG: ${{ steps.install.outputs.clang }}
+        INSTALL_CLANGXX: ${{ steps.install.outputs.clangxx }}
+      run: |
+        New-Variable os -Value $env:RUNNER_OS -Option Constant
+
+        New-Variable linux_host -Value ($os -eq 'Linux') -Option Constant
+        New-Variable windows_host -Value ($os -eq 'Windows') -Option Constant
+
+        New-Variable cc -Value ($env:INPUT_CC -eq '1') -Option Constant
+
+        New-Variable clang -Value $env:INSTALL_CLANG -Option Constant
+        New-Variable clangxx -Value $env:INSTALL_CLANGXX -Option Constant
+
+        function Link-Exe {
+            param(
+                [Parameter(Mandatory=$true)]
+                [string] $Exe,
+                [Parameter(Mandatory=$true)]
+                [string] $LinkName
+            )
+
+            $exe_path = (Get-Command $Exe).Path
+            $link_dir = if ($script:windows_host) { Split-Path $exe_path } else { '/usr/local/bin' }
+            $link_name = if ($script:windows_host) { "$LinkName.exe" } else { $LinkName }
+            $link_path = Join-Path $link_dir $link_name
+            echo "Creating link $link_path -> $exe_path"
+            if ($script:linux_host) {
+                sudo ln -f -s $exe_path $link_path
+            } elseif ($script:windows_host) {
+                New-Item -ItemType HardLink -Path $link_path -Value $exe_path -Force | Out-Null
+            }
+        }
+
+        if ($cc) {
+            Link-Exe $clang cc
+            if ($clang -ne 'clang') {
+                Link-Exe $clang 'clang'
+            }
+            Link-Exe $clangxx c++
+            if ($clangxx -ne 'clang++') {
+                Link-Exe $clangxx 'clang++'
+            }
+        }
+      shell: pwsh
+branding:
+  icon: star
+  color: green
