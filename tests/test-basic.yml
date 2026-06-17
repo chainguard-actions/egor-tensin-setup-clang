@@ -1,0 +1,85 @@
+name: Test basic usage (latest Clang)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install PowerShell
+        run: |
+          if ! command -v pwsh > /dev/null 2>&1; then
+            echo "Installing PowerShell..."
+            sudo apt-get update -q
+            sudo apt-get install -yq --no-install-recommends \
+              wget apt-transport-https software-properties-common
+            wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
+            sudo dpkg -i packages-microsoft-prod.deb
+            sudo apt-get update -q
+            sudo apt-get install -yq powershell
+          else
+            echo "pwsh already available: $(pwsh --version)"
+          fi
+      - id: install
+        uses: .
+        with:
+          version: latest
+          platform: x64
+          cc: 1
+      - name: Assert clang output is set
+        env:
+          ACTUAL: ${{ steps.install.outputs.clang }}
+        run: |
+          echo "actual clang: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: expected clang output to be non-empty"
+            exit 1
+          fi
+          echo "PASS: clang output = $ACTUAL"
+      - name: Assert clangxx output is set
+        env:
+          ACTUAL: ${{ steps.install.outputs.clangxx }}
+        run: |
+          echo "actual clangxx: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: expected clangxx output to be non-empty"
+            exit 1
+          fi
+          echo "PASS: clangxx output = $ACTUAL"
+      - name: Assert clang binary is executable
+        env:
+          CLANG: ${{ steps.install.outputs.clang }}
+        run: |
+          echo "Checking that '$CLANG' is available in PATH"
+          if ! command -v "$CLANG" > /dev/null 2>&1; then
+            echo "FAIL: '$CLANG' not found in PATH"
+            exit 1
+          fi
+          echo "PASS: $CLANG found at $(command -v $CLANG)"
+      - name: Assert clang++ binary is executable
+        env:
+          CLANGXX: ${{ steps.install.outputs.clangxx }}
+        run: |
+          echo "Checking that '$CLANGXX' is available in PATH"
+          if ! command -v "$CLANGXX" > /dev/null 2>&1; then
+            echo "FAIL: '$CLANGXX' not found in PATH"
+            exit 1
+          fi
+          echo "PASS: $CLANGXX found at $(command -v $CLANGXX)"
+      - name: Assert cc symlink is set up
+        run: |
+          echo "Checking that 'cc' is available in PATH"
+          if ! command -v cc > /dev/null 2>&1; then
+            echo "FAIL: 'cc' not found in PATH"
+            exit 1
+          fi
+          CC_PATH=$(command -v cc)
+          echo "PASS: cc found at $CC_PATH"
+      - name: Assert c++ symlink is set up
+        run: |
+          echo "Checking that 'c++' is available in PATH"
+          if ! command -v c++ > /dev/null 2>&1; then
+            echo "FAIL: 'c++' not found in PATH"
+            exit 1
+          fi
+          echo "PASS: c++ found at $(command -v c++)"

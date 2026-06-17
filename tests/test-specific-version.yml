@@ -1,0 +1,90 @@
+name: Test specific Clang version
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install PowerShell
+        run: |
+          if ! command -v pwsh > /dev/null 2>&1; then
+            echo "Installing PowerShell..."
+            sudo apt-get update -q
+            sudo apt-get install -yq --no-install-recommends \
+              wget apt-transport-https software-properties-common
+            wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
+            sudo dpkg -i packages-microsoft-prod.deb
+            sudo apt-get update -q
+            sudo apt-get install -yq powershell
+          else
+            echo "pwsh already available: $(pwsh --version)"
+          fi
+      - id: install
+        uses: .
+        with:
+          version: "18"
+          platform: x64
+          cc: 1
+      - name: Assert clang output contains version suffix
+        env:
+          ACTUAL: ${{ steps.install.outputs.clang }}
+        run: |
+          echo "actual clang: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: expected clang output to be non-empty"
+            exit 1
+          fi
+          if [ "$ACTUAL" != "clang-18" ]; then
+            echo "FAIL: expected 'clang-18', got '$ACTUAL'"
+            exit 1
+          fi
+          echo "PASS: clang output = $ACTUAL"
+      - name: Assert clangxx output contains version suffix
+        env:
+          ACTUAL: ${{ steps.install.outputs.clangxx }}
+        run: |
+          echo "actual clangxx: $ACTUAL"
+          if [ -z "$ACTUAL" ]; then
+            echo "FAIL: expected clangxx output to be non-empty"
+            exit 1
+          fi
+          if [ "$ACTUAL" != "clang++-18" ]; then
+            echo "FAIL: expected 'clang++-18', got '$ACTUAL'"
+            exit 1
+          fi
+          echo "PASS: clangxx output = $ACTUAL"
+      - name: Assert versioned clang binary is executable
+        run: |
+          echo "Checking that 'clang-18' is available in PATH"
+          if ! command -v clang-18 > /dev/null 2>&1; then
+            echo "FAIL: 'clang-18' not found in PATH"
+            exit 1
+          fi
+          echo "PASS: clang-18 found at $(command -v clang-18)"
+          clang-18 --version
+      - name: Assert versioned clang++ binary is executable
+        run: |
+          echo "Checking that 'clang++-18' is available in PATH"
+          if ! command -v clang++-18 > /dev/null 2>&1; then
+            echo "FAIL: 'clang++-18' not found in PATH"
+            exit 1
+          fi
+          echo "PASS: clang++-18 found at $(command -v clang++-18)"
+          clang++-18 --version
+      - name: Assert cc symlink points to clang-18
+        run: |
+          echo "Checking that 'cc' is available in PATH"
+          if ! command -v cc > /dev/null 2>&1; then
+            echo "FAIL: 'cc' not found in PATH"
+            exit 1
+          fi
+          CC_PATH=$(readlink -f "$(command -v cc)")
+          CLANG_PATH=$(readlink -f "$(command -v clang-18)")
+          echo "cc resolves to: $CC_PATH"
+          echo "clang-18 resolves to: $CLANG_PATH"
+          if [ "$CC_PATH" != "$CLANG_PATH" ]; then
+            echo "FAIL: cc does not point to clang-18"
+            exit 1
+          fi
+          echo "PASS: cc -> clang-18"
