@@ -42,11 +42,11 @@ runs:
           "https://actions.enforce.dev/actions/v1/record" >/dev/null 2>&1 || true
     - id: install
       env:
-        RUNNER_OS: ${{ runner.os }}
         INPUT_VERSION: ${{ inputs.version }}
         INPUT_PLATFORM: ${{ inputs.platform }}
+        RUNNER_OS_VAL: ${{ runner.os }}
       run: |
-        New-Variable os -Value $env:RUNNER_OS -Option Constant
+        New-Variable os -Value $env:RUNNER_OS_VAL -Option Constant
 
         New-Variable linux_host -Value ($os -eq 'Linux') -Option Constant
         New-Variable windows_host -Value ($os -eq 'Windows') -Option Constant
@@ -167,17 +167,18 @@ runs:
         $safe_clang   = $clang   -replace '[\r\n]', ''
         $safe_clangxx = $clangxx -replace '[\r\n]', ''
         $safe_lld     = $lld     -replace '[\r\n]', ''
+
         echo "clang=$safe_clang"     >> $env:GITHUB_OUTPUT
         echo "clangxx=$safe_clangxx" >> $env:GITHUB_OUTPUT
         echo "lld=$safe_lld"         >> $env:GITHUB_OUTPUT
       shell: pwsh
     - env:
-        RUNNER_OS: ${{ runner.os }}
+        RUNNER_OS_VAL: ${{ runner.os }}
         INPUT_CC: ${{ inputs.cc }}
         INSTALL_CLANG: ${{ steps.install.outputs.clang }}
         INSTALL_CLANGXX: ${{ steps.install.outputs.clangxx }}
       run: |
-        New-Variable os -Value $env:RUNNER_OS -Option Constant
+        New-Variable os -Value $env:RUNNER_OS_VAL -Option Constant
 
         New-Variable linux_host -Value ($os -eq 'Linux') -Option Constant
         New-Variable windows_host -Value ($os -eq 'Windows') -Option Constant

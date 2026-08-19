@@ -1,0 +1,117 @@
+name: Test specific clang version (version 18)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install PowerShell
+        run: |
+          # Install pwsh if not already available
+          if ! command -v pwsh > /dev/null 2>&1; then
+            echo "Installing PowerShell..."
+            sudo apt-get update -q
+            sudo apt-get install -yq wget apt-transport-https software-properties-common
+            wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
+            sudo dpkg -i packages-microsoft-prod.deb
+            rm packages-microsoft-prod.deb
+            sudo apt-get update -q
+            sudo apt-get install -yq powershell
+          else
+            echo "pwsh already available: $(pwsh --version)"
+          fi
+
+      - id: action
+        uses: .
+        with:
+          version: 18
+          platform: x64
+          cc: 1
+
+      - name: Assert clang output contains version
+        env:
+          CLANG: ${{ steps.action.outputs.clang }}
+        run: |
+          echo "clang output: $CLANG"
+          if [ -z "$CLANG" ]; then
+            echo "FAIL: clang output is empty"
+            exit 1
+          fi
+          # For a specific version, the output should be "clang-18"
+          if [ "$CLANG" != "clang-18" ]; then
+            echo "FAIL: expected 'clang-18' but got '$CLANG'"
+            exit 1
+          fi
+          echo "PASS: clang output = $CLANG"
+
+      - name: Assert clangxx output contains version
+        env:
+          CLANGXX: ${{ steps.action.outputs.clangxx }}
+        run: |
+          echo "clangxx output: $CLANGXX"
+          if [ -z "$CLANGXX" ]; then
+            echo "FAIL: clangxx output is empty"
+            exit 1
+          fi
+          # For a specific version, the output should be "clang++-18"
+          if [ "$CLANGXX" != "clang++-18" ]; then
+            echo "FAIL: expected 'clang++-18' but got '$CLANGXX'"
+            exit 1
+          fi
+          echo "PASS: clangxx output = $CLANGXX"
+
+      - name: Assert versioned clang binary is available
+        env:
+          CLANG: ${{ steps.action.outputs.clang }}
+        run: |
+          echo "Checking that $CLANG is on PATH"
+          if ! command -v "$CLANG" > /dev/null 2>&1; then
+            echo "FAIL: $CLANG not found on PATH"
+            exit 1
+          fi
+          echo "PASS: $CLANG is available"
+
+      - name: Assert versioned clang++ binary is available
+        env:
+          CLANGXX: ${{ steps.action.outputs.clangxx }}
+        run: |
+          echo "Checking that $CLANGXX is on PATH"
+          if ! command -v "$CLANGXX" > /dev/null 2>&1; then
+            echo "FAIL: $CLANGXX not found on PATH"
+            exit 1
+          fi
+          echo "PASS: $CLANGXX is available"
+
+      - name: Assert versioned clang can compile a simple program
+        env:
+          CLANG: ${{ steps.action.outputs.clang }}
+        run: |
+          echo "Testing $CLANG can compile a simple C program"
+          printf '#include <stdio.h>\nint main() { printf("hello\\n"); return 0; }\n' > /tmp/hello3.c
+          "$CLANG" /tmp/hello3.c -o /tmp/hello3
+          OUTPUT="$(/tmp/hello3)"
+          echo "Output: $OUTPUT"
+          if [ "$OUTPUT" != "hello" ]; then
+            echo "FAIL: expected 'hello' but got '$OUTPUT'"
+            exit 1
+          fi
+          echo "PASS: versioned clang compiled and ran successfully"
+
+      - name: Assert cc symlink points to versioned clang
+        run: |
+          echo "Checking cc symlink points to clang-18"
+          if ! command -v cc > /dev/null 2>&1; then
+            echo "FAIL: cc not found on PATH"
+            exit 1
+          fi
+          CC_PATH="$(command -v cc)"
+          REAL="$(readlink -f "$CC_PATH" 2>/dev/null || true)"
+          echo "cc -> $CC_PATH -> $REAL"
+          if echo "$REAL" | grep -q "clang"; then
+            echo "PASS: cc points to a clang binary"
+          else
+            echo "FAIL: cc does not point to clang (real=$REAL)"
+            exit 1
+          fi

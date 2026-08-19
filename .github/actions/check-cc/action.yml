@@ -1,0 +1,33 @@
+name: Check symlinks
+description: Check symlinks
+inputs:
+  version:
+    description: Specific version to check
+    required: false
+runs:
+  using: composite
+  steps:
+    - run: |
+        function Check-Exe {
+            param(
+                [Parameter(Mandatory=$true)]
+                [string] $Exe
+            )
+
+            echo (Get-Command $Exe).Path
+            $output = & $Exe --version
+            echo $output
+
+            $($output | Select-String -Pattern "clang version" -SimpleMatch -Quiet) -or $(throw "Unexpected `$Exe --version` output")
+
+            $version = '${{ inputs.version }}'
+            if ($version) {
+                $($output | Select-String -Pattern "$version." -SimpleMatch -Quiet) -or $(throw "Unexpected `$Exe --version` output")
+            }
+        }
+
+        Check-Exe cc
+        Check-Exe clang
+        Check-Exe c++
+        Check-Exe clang++
+      shell: pwsh

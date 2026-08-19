@@ -1,4 +1,4 @@
-name: Test basic usage (latest clang, default platform)
+name: Test cc=0 (skip cc/c++ symlink setup)
 on:
   workflow_dispatch:
 jobs:
@@ -23,12 +23,19 @@ jobs:
             echo "pwsh already available: $(pwsh --version)"
           fi
 
+      - name: Record pre-existing cc path (if any)
+        id: pre
+        run: |
+          PRE_CC="$(command -v cc 2>/dev/null || echo '')"
+          echo "pre_cc=$PRE_CC" >> "$GITHUB_OUTPUT"
+          echo "Pre-existing cc: $PRE_CC"
+
       - id: action
         uses: .
         with:
           version: latest
           platform: x64
-          cc: 1
+          cc: 0
 
       - name: Assert clang output is set
         env:
@@ -52,80 +59,43 @@ jobs:
           fi
           echo "PASS: clangxx output = $CLANGXX"
 
-      - name: Assert clang binary is executable
+      - name: Assert clang binary is available
         env:
           CLANG: ${{ steps.action.outputs.clang }}
         run: |
-          echo "Checking that $CLANG is on PATH and executable"
+          echo "Checking that $CLANG is on PATH"
           if ! command -v "$CLANG" > /dev/null 2>&1; then
             echo "FAIL: $CLANG not found on PATH"
             exit 1
           fi
           echo "PASS: $CLANG is available"
 
-      - name: Assert clang++ binary is executable
+      - name: Assert cc symlink was NOT created by action (cc=0)
         env:
-          CLANGXX: ${{ steps.action.outputs.clangxx }}
+          PRE_CC: ${{ steps.pre.outputs.pre_cc }}
         run: |
-          echo "Checking that $CLANGXX is on PATH and executable"
-          if ! command -v "$CLANGXX" > /dev/null 2>&1; then
-            echo "FAIL: $CLANGXX not found on PATH"
-            exit 1
-          fi
-          echo "PASS: $CLANGXX is available"
-
-      - name: Assert cc symlink is set up
-        run: |
-          echo "Checking cc symlink"
-          if ! command -v cc > /dev/null 2>&1; then
-            echo "FAIL: cc not found on PATH"
-            exit 1
-          fi
-          CC_PATH="$(command -v cc)"
-          echo "cc resolves to: $CC_PATH"
-          REAL="$(readlink -f "$CC_PATH" 2>/dev/null || true)"
-          echo "real path: $REAL"
-          if echo "$REAL" | grep -qi clang; then
-            echo "PASS: cc points to clang"
-          else
-            if echo "$CC_PATH" | grep -qi clang; then
-              echo "PASS: cc path contains clang"
-            else
-              echo "FAIL: cc does not appear to point to clang (real=$REAL, path=$CC_PATH)"
+          CURRENT_CC="$(command -v cc 2>/dev/null || echo '')"
+          echo "Pre-existing cc: $PRE_CC"
+          echo "Current cc: $CURRENT_CC"
+          # If cc didn't exist before and now it does, the action created it -- that's a FAIL
+          if [ -z "$PRE_CC" ] && [ -n "$CURRENT_CC" ]; then
+            # Check if it points to clang -- if so, action created it despite cc=0
+            REAL="$(readlink -f "$CURRENT_CC" 2>/dev/null || true)"
+            if echo "$REAL" | grep -qi clang; then
+              echo "FAIL: cc symlink pointing to clang was created even though cc=0"
               exit 1
             fi
           fi
+          echo "PASS: cc symlink was not created by the action (cc=0 respected)"
 
-      - name: Assert c++ symlink is set up
-        run: |
-          echo "Checking c++ symlink"
-          if ! command -v "c++" > /dev/null 2>&1; then
-            echo "FAIL: c++ not found on PATH"
-            exit 1
-          fi
-          CXX_PATH="$(command -v c++)"
-          echo "c++ resolves to: $CXX_PATH"
-          REAL="$(readlink -f "$CXX_PATH" 2>/dev/null || true)"
-          echo "real path: $REAL"
-          if echo "$REAL" | grep -qi clang; then
-            echo "PASS: c++ points to clang++"
-          else
-            if echo "$CXX_PATH" | grep -qi clang; then
-              echo "PASS: c++ path contains clang"
-            else
-              echo "FAIL: c++ does not appear to point to clang++ (real=$REAL, path=$CXX_PATH)"
-              exit 1
-            fi
-          fi
-
-      - name: Assert clang can compile a simple program
+      - name: Assert clang can still compile a simple program
         env:
           CLANG: ${{ steps.action.outputs.clang }}
         run: |
           echo "Testing $CLANG can compile a simple C program"
-          printf '#include <stdio.h>\nint main() { printf("hello\\n"); return 0; }\n' > /tmp/hello.c
-          "$CLANG" /tmp/hello.c -o /tmp/hello
-          OUTPUT="$(/tmp/hello)"
+          printf '#include <stdio.h>\nint main() { printf("hello\\n"); return 0; }\n' > /tmp/hello2.c
+          "$CLANG" /tmp/hello2.c -o /tmp/hello2
+          OUTPUT="$(/tmp/hello2)"
           echo "Output: $OUTPUT"
           if [ "$OUTPUT" != "hello" ]; then
             echo "FAIL: expected 'hello' but got '$OUTPUT'"
