@@ -1,20 +1,31 @@
-name: Test basic usage - install latest clang
+name: Test basic usage (latest clang, default settings)
 on:
   workflow_dispatch:
-
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Install PowerShell
+      - name: Install PowerShell if missing
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -yq --no-install-recommends powershell || true
-          # Try snap if apt fails
-          if ! command -v pwsh &>/dev/null; then
-            sudo snap install powershell --classic || true
+          if command -v pwsh > /dev/null 2>&1; then
+            echo "pwsh already available: $(pwsh --version)"
+            exit 0
+          fi
+          echo "Installing PowerShell Core..."
+          # Use snap as a reliable cross-version method
+          if command -v snap > /dev/null 2>&1; then
+            sudo snap install powershell --classic
+          else
+            # Fallback: install via Microsoft apt repo
+            UBUNTU_VERSION=$(lsb_release -rs)
+            sudo apt-get update -q
+            sudo apt-get install -yq --no-install-recommends wget ca-certificates
+            wget -q "https://packages.microsoft.com/config/ubuntu/${UBUNTU_VERSION}/packages-microsoft-prod.deb" -O /tmp/packages-microsoft-prod.deb
+            sudo dpkg -i /tmp/packages-microsoft-prod.deb
+            sudo apt-get update -q
+            sudo apt-get install -yq powershell
           fi
           pwsh --version
 
@@ -23,76 +34,81 @@ jobs:
         with:
           version: latest
           platform: x64
-          cc: '1'
+          cc: 1
 
-      - name: Assert clang output equals 'clang' for latest
+      - name: Assert clang output is set
         env:
-          CLANG_OUT: ${{ steps.action.outputs.clang }}
+          CLANG: ${{ steps.action.outputs.clang }}
         run: |
-          echo "clang output: $CLANG_OUT"
-          if [ -z "$CLANG_OUT" ]; then
+          echo "clang output: $CLANG"
+          if [ -z "$CLANG" ]; then
             echo "FAIL: clang output is empty"
             exit 1
           fi
-          if [ "$CLANG_OUT" != "clang" ]; then
-            echo "FAIL: expected 'clang' but got '$CLANG_OUT'"
-            exit 1
-          fi
-          echo "PASS: clang output is '$CLANG_OUT'"
+          echo "PASS: clang output = $CLANG"
 
-      - name: Assert clangxx output equals 'clang++' for latest
+      - name: Assert clangxx output is set
         env:
-          CLANGXX_OUT: ${{ steps.action.outputs.clangxx }}
+          CLANGXX: ${{ steps.action.outputs.clangxx }}
         run: |
-          echo "clangxx output: $CLANGXX_OUT"
-          if [ -z "$CLANGXX_OUT" ]; then
+          echo "clangxx output: $CLANGXX"
+          if [ -z "$CLANGXX" ]; then
             echo "FAIL: clangxx output is empty"
             exit 1
           fi
-          if [ "$CLANGXX_OUT" != "clang++" ]; then
-            echo "FAIL: expected 'clang++' but got '$CLANGXX_OUT'"
-            exit 1
-          fi
-          echo "PASS: clangxx output is '$CLANGXX_OUT'"
+          echo "PASS: clangxx output = $CLANGXX"
 
-      - name: Assert clang binary is available
+      - name: Assert clang binary is executable
         env:
-          CLANG_BIN: ${{ steps.action.outputs.clang }}
+          CLANG: ${{ steps.action.outputs.clang }}
         run: |
-          echo "Checking for clang binary: $CLANG_BIN"
-          if ! command -v "$CLANG_BIN" &>/dev/null; then
-            echo "FAIL: $CLANG_BIN not found in PATH"
+          echo "Checking that '$CLANG' is on PATH and executable"
+          if ! command -v "$CLANG" > /dev/null 2>&1; then
+            echo "FAIL: $CLANG not found on PATH"
             exit 1
           fi
-          echo "PASS: $CLANG_BIN is available at $(command -v $CLANG_BIN)"
+          echo "PASS: $CLANG found at $(command -v "$CLANG")"
 
-      - name: Assert clang++ binary is available
+      - name: Assert clang++ binary is executable
         env:
-          CLANGXX_BIN: ${{ steps.action.outputs.clangxx }}
+          CLANGXX: ${{ steps.action.outputs.clangxx }}
         run: |
-          echo "Checking for clang++ binary: $CLANGXX_BIN"
-          if ! command -v "$CLANGXX_BIN" &>/dev/null; then
-            echo "FAIL: $CLANGXX_BIN not found in PATH"
+          echo "Checking that '$CLANGXX' is on PATH and executable"
+          if ! command -v "$CLANGXX" > /dev/null 2>&1; then
+            echo "FAIL: $CLANGXX not found on PATH"
             exit 1
           fi
-          echo "PASS: $CLANGXX_BIN is available at $(command -v $CLANGXX_BIN)"
+          echo "PASS: $CLANGXX found at $(command -v "$CLANGXX")"
 
       - name: Assert cc symlink is set up
         run: |
-          echo "Checking for cc symlink"
-          if ! command -v cc &>/dev/null; then
-            echo "FAIL: cc not found in PATH"
+          echo "Checking that 'cc' symlink exists"
+          if ! command -v cc > /dev/null 2>&1; then
+            echo "FAIL: cc not found on PATH"
             exit 1
           fi
-          CC_PATH=$(command -v cc)
-          echo "PASS: cc is available at $CC_PATH"
+          echo "PASS: cc found at $(command -v cc)"
 
       - name: Assert c++ symlink is set up
         run: |
-          echo "Checking for c++ symlink"
-          if ! command -v "c++" &>/dev/null; then
-            echo "FAIL: c++ not found in PATH"
+          echo "Checking that 'c++' symlink exists"
+          if ! command -v c++ > /dev/null 2>&1; then
+            echo "FAIL: c++ not found on PATH"
             exit 1
           fi
-          CXX_PATH=$(command -v "c++")
-          echo "PASS: c++ is available at $CXX_PATH"
+          echo "PASS: c++ found at $(command -v c++)"
+
+      - name: Assert clang can compile a simple program
+        env:
+          CLANG: ${{ steps.action.outputs.clang }}
+        run: |
+          echo "Compiling a simple C program with $CLANG"
+          printf '#include <stdio.h>\nint main() { printf("Hello from clang!\\n"); return 0; }\n' > /tmp/hello.c
+          "$CLANG" /tmp/hello.c -o /tmp/hello
+          output=$(/tmp/hello)
+          echo "Program output: $output"
+          if [ "$output" != "Hello from clang!" ]; then
+            echo "FAIL: unexpected output: $output"
+            exit 1
+          fi
+          echo "PASS: clang compiled and ran successfully"

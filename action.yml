@@ -155,13 +155,14 @@ runs:
             Install-Package llvm
 
             $bin_dir = Join-Path $env:ProgramFiles LLVM bin
-            echo $bin_dir >> $env:GITHUB_PATH
+            $safe_bin_dir = $bin_dir -replace '[\r\n]',''
+            echo $safe_bin_dir >> $env:GITHUB_PATH
         } else {
             throw "Sorry, installing Clang is unsupported on $os"
         }
 
-        $safe_clang   = $clang   -replace '[\r\n]', ''
-        $safe_clangxx = $clangxx -replace '[\r\n]', ''
+        $safe_clang = $clang -replace '[\r\n]',''
+        $safe_clangxx = $clangxx -replace '[\r\n]',''
         echo "clang=$safe_clang"     >> $env:GITHUB_OUTPUT
         echo "clangxx=$safe_clangxx" >> $env:GITHUB_OUTPUT
       shell: pwsh

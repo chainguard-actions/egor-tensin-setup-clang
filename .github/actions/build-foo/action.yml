@@ -1,0 +1,33 @@
+name: Build foo.exe
+description: Build foo.exe
+inputs:
+  binary:
+    description: Compiler binary file name
+    required: false
+    default: clang++
+  platform:
+    description: Target platform
+    required: true
+runs:
+  using: composite
+  steps:
+    - env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_PLATFORM: ${{ matrix.platform }}
+        INPUT_OS: ${{ runner.os }}
+        INPUT_BINARY: ${{ inputs.binary }}
+      run: |
+        $version = $env:INPUT_VERSION
+        $version = if ($version) { "-$version" } else { $version }
+
+        $flags = @()
+        if ($env:INPUT_PLATFORM -eq 'x86') {
+            $flags += '-m32'
+        }
+        $flags += '-std=c++14','-o','foo.exe','foo.cpp'
+        if ($env:INPUT_OS -eq 'Linux') {
+            $flags += '-lpthread'
+        }
+
+        & $env:INPUT_BINARY $flags
+      shell: pwsh

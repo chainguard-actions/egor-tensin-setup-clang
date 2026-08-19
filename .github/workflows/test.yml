@@ -1,0 +1,70 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+  schedule:
+    # Weekly, at 5:45 AM on Friday (somewhat randomly chosen).
+    - cron: '45 5 * * 5'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        platform: [x86, x64]
+        os: [ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025]
+    runs-on: '${{ matrix.os }}'
+    name: 'Test: ${{ matrix.os }} / ${{ matrix.platform }}'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Clean up PATH
+        uses: egor-tensin/cleanup-path@cf0901d753db0bf4d15baf625a6fa537978b03a9 # v4
+        if: runner.os == 'Windows'
+      - name: Set up Clang
+        uses: ./
+        with:
+          platform: '${{ matrix.platform }}'
+          cc: 1
+      - name: Build foo.exe
+        uses: ./.github/actions/build-foo
+      - name: Run foo.exe
+        uses: ./.github/actions/run-foo
+      - name: Check symlinks
+        uses: ./.github/actions/check-cc
+
+  versions:
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+        version: [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+        exclude:
+          - {os: ubuntu-24.04, version: 11}
+          - {os: ubuntu-24.04, version: 12}
+          - {os: ubuntu-24.04, version: 13}
+    runs-on: '${{ matrix.os }}'
+    name: 'Version: ${{ matrix.os }} / ${{ matrix.version }}'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - id: setup
+        name: Set up Clang
+        uses: ./
+        with:
+          version: '${{ matrix.version }}'
+          platform: '${{ matrix.platform }}'
+          cc: 1
+      - name: Build foo.exe
+        uses: ./.github/actions/build-foo
+        with:
+          binary: '${{ steps.setup.outputs.clangxx }}'
+      - name: Run foo.exe
+        uses: ./.github/actions/run-foo
+      - name: Check symlinks
+        uses: ./.github/actions/check-cc
+        with:
+          version: '${{ matrix.version }}'

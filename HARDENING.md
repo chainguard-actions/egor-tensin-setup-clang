@@ -8,50 +8,64 @@
 
 **Test Policy SHA:** `843adf9e4b8f85d0c08b27b9d0b09dd094b54702`
 
-**Harden Agent Version:** `1`
+**Harden Agent Version:** `2`
 
-Action **egor-tensin--setup-clang/v2.1** was hardened automatically. 5 finding(s) were identified and resolved across 1 iteration(s).
+Action **egor-tensin--setup-clang/v2.1** was hardened automatically. 9 finding(s) were identified and resolved across 1 iteration(s).
 
 ## Findings Fixed
 
 ### script-injection (severity: high)
 
-Sub-rule (a): Multiple ${{ ... }} expressions are interpolated directly inside run: shell command strings in action.yml. This means GitHub Actions performs YAML template substitution before the shell ever sees the value, allowing an attacker-controlled input to inject arbitrary PowerShell commands.
-
-Step 1 (id: install):
-- Line 31: `New-Variable os -Value '${{ runner.os }}' -Option Constant`
-- Line 36: `New-Variable version -Value ('${{ inputs.version }}') -Option Constant`
-- Line 38: `New-Variable x64 -Value ('${{ inputs.platform }}' -eq 'x64') -Option Constant`
-
-Step 2 (unnamed):
-- Line 125: `New-Variable os -Value '${{ runner.os }}' -Option Constant`
-- Line 129: `New-Variable cc -Value ('${{ inputs.cc }}' -eq '1') -Option Constant`
-- Line 131: `New-Variable clang -Value '${{ steps.install.outputs.clang }}' -Option Constant`
-- Line 132: `New-Variable clangxx -Value '${{ steps.install.outputs.clangxx }}' -Option Constant`
-
-All of these should be passed via env: variables and referenced as PowerShell environment variables (e.g. $env:INPUT_VERSION) instead of being interpolated directly.
+Sub-rule (a): Multiple ${{ }} expressions are interpolated directly inside run: PowerShell script blocks in action.yml. This means YAML template substitution happens before the shell sees the script, allowing an attacker-controlled value to inject arbitrary PowerShell commands. Offending expressions in step 1 (id: install): `${{ runner.os }}` (line 30), `${{ inputs.version }}` (line 34), `${{ inputs.platform }}` (line 35). Offending expressions in step 2: `${{ runner.os }}`, `${{ inputs.cc }}`, `${{ steps.install.outputs.clang }}`, `${{ steps.install.outputs.clangxx }}`. All values should be passed via env: variables and referenced as $ENV_VAR inside the script.
 
 Locations:
 
-- `action.yml:31`
-- `action.yml:36`
-- `action.yml:38`
-- `action.yml:125`
-- `action.yml:129`
-- `action.yml:131`
-- `action.yml:132`
+- `action.yml:30`
+- `action.yml:34`
+- `action.yml:35`
+
+### script-injection (severity: high)
+
+Sub-rule (a): Multiple ${{ }} expressions are interpolated directly inside a run: PowerShell script block in .github/actions/build-foo/action.yml. Offending expressions: `${{ inputs.version }}`, `${{ matrix.platform }}`, `${{ runner.os }}`, and `${{ inputs.binary }}` are all substituted into the script before the shell executes it, enabling command injection via attacker-controlled inputs or matrix values.
+
+Locations:
+
+- `.github/actions/build-foo/action.yml:12`
+
+### script-injection (severity: high)
+
+Sub-rule (a): `${{ inputs.version }}` is interpolated directly inside a run: PowerShell script block in .github/actions/check-cc/action.yml. The value is substituted into the script before the shell executes it, and an attacker-controlled version input could inject arbitrary PowerShell commands.
+
+Locations:
+
+- `.github/actions/check-cc/action.yml:22`
 
 ### github-env-injection (severity: high)
 
-The first run: block (id: install) writes $clang and $clangxx to $GITHUB_OUTPUT without sanitization. Both variables are derived from ${{ inputs.version }} (user-controlled input) — when a non-latest version is requested, $clang becomes "clang-$pkg_version" and $clangxx becomes "clangxx-$pkg_version" where $pkg_version is derived from the user-supplied inputs.version. An attacker could inject newlines into inputs.version to write arbitrary key=value pairs into GITHUB_OUTPUT (and transitively into GITHUB_ENV if a downstream step uses the output). The required sanitization step (stripping newlines before writing) is absent.
-
-- Line 120: `echo "clang=$clang" >> $env:GITHUB_OUTPUT`
-- Line 121: `echo "clangxx=$clangxx" >> $env:GITHUB_OUTPUT`
+In action.yml (step id: install), the variables `$clang` and `$clangxx` are derived from `${{ inputs.version }}` (an untrusted input) and written to `$env:GITHUB_OUTPUT` without the required sanitization step (`printf '%s' ... | tr -d '\n\r'`). Additionally, `$bin_dir` (derived from the inherited `$env:ProgramFiles` environment variable, which is workflow-controlled) is written to `$env:GITHUB_PATH` without sanitization. A newline-containing value could inject additional key=value pairs into GITHUB_OUTPUT or additional paths into GITHUB_PATH.
 
 Locations:
 
-- `action.yml:120`
-- `action.yml:121`
+- `action.yml:107`
+- `action.yml:110`
+- `action.yml:111`
+
+### unpinned-uses (severity: high)
+
+The workflow file .github/workflows/test.yml references external actions using mutable tag refs instead of full 40-character SHA digests, making the workflow vulnerable to supply-chain attacks if the tag is moved. Failing references: `actions/checkout@v6` and `egor-tensin/cleanup-path@v4`. These should be pinned to their full commit SHAs (e.g. `actions/checkout@<40-char-sha> # v6`).
+
+Locations:
+
+- `.github/workflows/test.yml:19`
+- `.github/workflows/test.yml:21`
+
+### missing-permissions (severity: medium)
+
+The workflow file .github/workflows/test.yml has no top-level `permissions:` key and no job-level `permissions:` keys on any of its jobs (`test`, `versions`). Without explicit permissions, the workflow inherits the repository's default token permissions, which may be overly broad. A minimal `permissions: {}` or specific scopes (e.g. `contents: read`) should be declared.
+
+Locations:
+
+- `.github/workflows/test.yml:1`
 
 ### static-inline-injection (severity: high)
 
@@ -81,9 +95,17 @@ Locations:
 
 ### Iteration 1
 
-**Fixes applied:** script-injection, github-env-injection, static-inline-injection
+**Fixes applied:** script-injection, github-env-injection, unpinned-uses, missing-permissions, static-inline-injection
 
 **Notes:**
 
-Fixed action.yml by: (1) Moving all ${{ runner.os }}, ${{ inputs.version }}, ${{ inputs.platform }}, ${{ inputs.cc }}, ${{ steps.install.outputs.clang }}, and ${{ steps.install.outputs.clangxx }} expressions from run: blocks into env: blocks on both steps, referencing them as $env:INPUT_OS, $env:INPUT_VERSION, $env:INPUT_PLATFORM, $env:INPUT_CC, $env:INPUT_CLANG, $env:INPUT_CLANGXX in PowerShell. (2) Added newline sanitization before writing to $GITHUB_OUTPUT: $safe_clang = $clang -replace '[\r\n]', '' and $safe_clangxx = $clangxx -replace '[\r\n]', '' to prevent github-env-injection. All ${{ }} expressions now only appear in safe locations (env: blocks and output value: declarations).
+Fixed all findings across 4 files:
+
+1. action.yml: Moved all ${{ }} expressions (runner.os, inputs.version, inputs.platform, inputs.cc, steps.install.outputs.clang/clangxx) from run: blocks into env: blocks in both steps. Added PowerShell sanitization (-replace '[\r\n]','') for values written to $env:GITHUB_OUTPUT and $env:GITHUB_PATH to prevent newline injection.
+
+2. .github/actions/build-foo/action.yml: Moved ${{ inputs.version }}, ${{ matrix.platform }}, ${{ runner.os }}, ${{ inputs.binary }} from run: block into env: block; updated script to use $env:INPUT_* variables.
+
+3. .github/actions/check-cc/action.yml: Moved ${{ inputs.version }} from run: block into env: block; updated script to use $env:INPUT_VERSION.
+
+4. .github/workflows/test.yml: Added top-level 'permissions: contents: read' block; pinned actions/checkout@v6 to SHA d23441a48e516b6c34aea4fa41551a30e30af803 and egor-tensin/cleanup-path@v4 to SHA cf0901d753db0bf4d15baf625a6fa537978b03a9.
 

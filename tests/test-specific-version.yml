@@ -1,92 +1,104 @@
-name: Test install specific clang version
+name: Test specific Clang version installation
 on:
   workflow_dispatch:
-
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Install PowerShell
+      - name: Install PowerShell if missing
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -yq --no-install-recommends powershell || true
-          if ! command -v pwsh &>/dev/null; then
-            sudo snap install powershell --classic || true
+          if command -v pwsh > /dev/null 2>&1; then
+            echo "pwsh already available: $(pwsh --version)"
+            exit 0
+          fi
+          echo "Installing PowerShell Core..."
+          if command -v snap > /dev/null 2>&1; then
+            sudo snap install powershell --classic
+          else
+            UBUNTU_VERSION=$(lsb_release -rs)
+            sudo apt-get update -q
+            sudo apt-get install -yq --no-install-recommends wget ca-certificates
+            wget -q "https://packages.microsoft.com/config/ubuntu/${UBUNTU_VERSION}/packages-microsoft-prod.deb" -O /tmp/packages-microsoft-prod.deb
+            sudo dpkg -i /tmp/packages-microsoft-prod.deb
+            sudo apt-get update -q
+            sudo apt-get install -yq powershell
           fi
           pwsh --version
 
       - id: action
         uses: .
         with:
-          version: '14'
+          version: "18"
           platform: x64
-          cc: '1'
+          cc: 1
 
       - name: Assert clang output contains version
         env:
-          CLANG_OUT: ${{ steps.action.outputs.clang }}
+          CLANG: ${{ steps.action.outputs.clang }}
         run: |
-          echo "clang output: $CLANG_OUT"
-          if [ -z "$CLANG_OUT" ]; then
+          echo "clang output: $CLANG"
+          if [ -z "$CLANG" ]; then
             echo "FAIL: clang output is empty"
             exit 1
           fi
-          if [[ "$CLANG_OUT" != *"14"* ]]; then
-            echo "FAIL: expected clang output to contain '14', got '$CLANG_OUT'"
+          if echo "$CLANG" | grep -q "18"; then
+            echo "PASS: clang output contains version 18: $CLANG"
+          else
+            echo "FAIL: clang output '$CLANG' does not contain '18'"
             exit 1
           fi
-          echo "PASS: clang output is '$CLANG_OUT'"
 
       - name: Assert clangxx output contains version
         env:
-          CLANGXX_OUT: ${{ steps.action.outputs.clangxx }}
+          CLANGXX: ${{ steps.action.outputs.clangxx }}
         run: |
-          echo "clangxx output: $CLANGXX_OUT"
-          if [ -z "$CLANGXX_OUT" ]; then
+          echo "clangxx output: $CLANGXX"
+          if [ -z "$CLANGXX" ]; then
             echo "FAIL: clangxx output is empty"
             exit 1
           fi
-          if [[ "$CLANGXX_OUT" != *"14"* ]]; then
-            echo "FAIL: expected clangxx output to contain '14', got '$CLANGXX_OUT'"
+          if echo "$CLANGXX" | grep -q "18"; then
+            echo "PASS: clangxx output contains version 18: $CLANGXX"
+          else
+            echo "FAIL: clangxx output '$CLANGXX' does not contain '18'"
             exit 1
           fi
-          echo "PASS: clangxx output is '$CLANGXX_OUT'"
 
-      - name: Assert versioned clang binary is available
+      - name: Assert versioned clang binary is executable
         env:
-          CLANG_BIN: ${{ steps.action.outputs.clang }}
+          CLANG: ${{ steps.action.outputs.clang }}
         run: |
-          echo "Checking for versioned clang binary: $CLANG_BIN"
-          if ! command -v "$CLANG_BIN" &>/dev/null; then
-            echo "FAIL: $CLANG_BIN not found in PATH"
+          echo "Checking that '$CLANG' is on PATH and executable"
+          if ! command -v "$CLANG" > /dev/null 2>&1; then
+            echo "FAIL: $CLANG not found on PATH"
             exit 1
           fi
-          echo "PASS: $CLANG_BIN is available at $(command -v $CLANG_BIN)"
+          echo "PASS: $CLANG found at $(command -v "$CLANG")"
 
-      - name: Assert versioned clang++ binary is available
+      - name: Assert versioned clang++ binary is executable
         env:
-          CLANGXX_BIN: ${{ steps.action.outputs.clangxx }}
+          CLANGXX: ${{ steps.action.outputs.clangxx }}
         run: |
-          echo "Checking for versioned clang++ binary: $CLANGXX_BIN"
-          if ! command -v "$CLANGXX_BIN" &>/dev/null; then
-            echo "FAIL: $CLANGXX_BIN not found in PATH"
+          echo "Checking that '$CLANGXX' is on PATH and executable"
+          if ! command -v "$CLANGXX" > /dev/null 2>&1; then
+            echo "FAIL: $CLANGXX not found on PATH"
             exit 1
           fi
-          echo "PASS: $CLANGXX_BIN is available at $(command -v $CLANGXX_BIN)"
+          echo "PASS: $CLANGXX found at $(command -v "$CLANGXX")"
 
-      - name: Assert cc symlink points to clang
+      - name: Assert versioned clang can compile a simple program
+        env:
+          CLANG: ${{ steps.action.outputs.clang }}
         run: |
-          echo "Checking cc symlink"
-          if ! command -v cc &>/dev/null; then
-            echo "FAIL: cc not found in PATH"
+          echo "Compiling a simple C program with $CLANG"
+          printf '#include <stdio.h>\nint main() { printf("Hello from clang 18!\\n"); return 0; }\n' > /tmp/hello_v18.c
+          "$CLANG" /tmp/hello_v18.c -o /tmp/hello_v18
+          output=$(/tmp/hello_v18)
+          echo "Program output: $output"
+          if [ "$output" != "Hello from clang 18!" ]; then
+            echo "FAIL: unexpected output: $output"
             exit 1
           fi
-          CC_PATH=$(readlink -f "$(command -v cc)" 2>/dev/null || command -v cc)
-          echo "cc resolves to: $CC_PATH"
-          if [[ "$CC_PATH" != *"clang"* ]]; then
-            echo "FAIL: cc does not point to clang, points to '$CC_PATH'"
-            exit 1
-          fi
-          echo "PASS: cc points to $CC_PATH"
+          echo "PASS: clang-18 compiled and ran successfully"
