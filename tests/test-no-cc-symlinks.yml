@@ -1,4 +1,4 @@
-name: Test no cc symlinks (cc=0)
+name: Test cc=0 (no symlink creation)
 on:
   workflow_dispatch:
 jobs:
@@ -6,6 +6,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
       - name: Install PowerShell
         run: |
           if ! command -v pwsh > /dev/null 2>&1; then
@@ -15,63 +16,77 @@ jobs:
               wget apt-transport-https software-properties-common
             wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
             sudo dpkg -i packages-microsoft-prod.deb
+            rm packages-microsoft-prod.deb
             sudo apt-get update -q
             sudo apt-get install -yq powershell
           else
-            echo "pwsh already available: $(pwsh --version)"
+            echo "PowerShell already available: $(pwsh --version)"
           fi
-      - id: install
+
+      - id: action
         uses: .
         with:
           version: latest
           platform: x64
-          cc: 0
+          cc: '0'
+
       - name: Assert clang output is set
         env:
-          ACTUAL: ${{ steps.install.outputs.clang }}
+          CLANG: ${{ steps.action.outputs.clang }}
         run: |
-          echo "actual clang: $ACTUAL"
-          if [ -z "$ACTUAL" ]; then
-            echo "FAIL: expected clang output to be non-empty"
+          echo "clang output: $CLANG"
+          if [ -z "$CLANG" ]; then
+            echo "FAIL: clang output is empty"
             exit 1
           fi
-          echo "PASS: clang output = $ACTUAL"
+          echo "PASS: clang output is '$CLANG'"
+
       - name: Assert clangxx output is set
         env:
-          ACTUAL: ${{ steps.install.outputs.clangxx }}
+          CLANGXX: ${{ steps.action.outputs.clangxx }}
         run: |
-          echo "actual clangxx: $ACTUAL"
-          if [ -z "$ACTUAL" ]; then
-            echo "FAIL: expected clangxx output to be non-empty"
+          echo "clangxx output: $CLANGXX"
+          if [ -z "$CLANGXX" ]; then
+            echo "FAIL: clangxx output is empty"
             exit 1
           fi
-          echo "PASS: clangxx output = $ACTUAL"
-      - name: Assert clang binary is executable
+          echo "PASS: clangxx output is '$CLANGXX'"
+
+      - name: Assert clang output equals 'clang' for latest
         env:
-          CLANG: ${{ steps.install.outputs.clang }}
+          CLANG: ${{ steps.action.outputs.clang }}
         run: |
-          echo "Checking that '$CLANG' is available in PATH"
-          if ! command -v "$CLANG" > /dev/null 2>&1; then
-            echo "FAIL: '$CLANG' not found in PATH"
+          echo "clang output: $CLANG"
+          if [ "$CLANG" != "clang" ]; then
+            echo "FAIL: expected 'clang' but got '$CLANG'"
             exit 1
           fi
-          echo "PASS: $CLANG found at $(command -v $CLANG)"
-      - name: Assert cc symlink is NOT created by this action
+          echo "PASS"
+
+      - name: Assert clang binary is installed
         run: |
-          # When cc=0, the action should not create the cc symlink.
-          # Note: /usr/bin/cc may already exist on the system (pointing to gcc).
-          # We verify that if cc exists, it does NOT point to clang.
-          CLANG_BIN="${{ steps.install.outputs.clang }}"
-          echo "clang binary: $CLANG_BIN"
+          echo "Checking if 'clang' is available..."
+          if ! command -v clang > /dev/null 2>&1; then
+            echo "FAIL: 'clang' not found in PATH"
+            exit 1
+          fi
+          echo "PASS: 'clang' is available at $(command -v clang)"
+          clang --version
+
+      - name: Assert cc is NOT a clang symlink created by this action
+        run: |
+          # When cc=0, the action should NOT have created a cc -> clang symlink.
+          # cc may still exist (e.g. pointing to gcc), but it should NOT point to clang.
+          echo "Checking that 'cc' does not point to clang (action should not have created it)..."
           if command -v cc > /dev/null 2>&1; then
-            CC_PATH=$(readlink -f "$(command -v cc)" 2>/dev/null || command -v cc)
-            CLANG_PATH=$(command -v "$CLANG_BIN" 2>/dev/null || true)
-            echo "cc resolves to: $CC_PATH"
-            echo "clang resolves to: $CLANG_PATH"
-            # If cc points to clang, that means the symlink was created (unexpected)
-            if [ -n "$CLANG_PATH" ] && [ "$CC_PATH" = "$CLANG_PATH" ]; then
-              echo "FAIL: cc points to clang even though cc=0 was set"
+            CC_PATH="$(command -v cc)"
+            CC_REAL="$(readlink -f "$CC_PATH" 2>/dev/null || echo "$CC_PATH")"
+            echo "cc resolves to: $CC_REAL"
+            if echo "$CC_REAL" | grep -qi 'clang'; then
+              echo "FAIL: 'cc' points to clang, but cc=0 was set — action should not have created this symlink"
               exit 1
             fi
+            echo "PASS: 'cc' does not point to clang (as expected with cc=0)"
+          else
+            echo "PASS: 'cc' not found in PATH (no symlink created, as expected with cc=0)"
           fi
-          echo "PASS: cc symlink not created by action (cc=0)"

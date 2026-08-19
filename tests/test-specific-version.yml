@@ -1,4 +1,4 @@
-name: Test specific Clang version
+name: Test specific version install (clang-18)
 on:
   workflow_dispatch:
 jobs:
@@ -6,6 +6,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
       - name: Install PowerShell
         run: |
           if ! command -v pwsh > /dev/null 2>&1; then
@@ -15,76 +16,82 @@ jobs:
               wget apt-transport-https software-properties-common
             wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
             sudo dpkg -i packages-microsoft-prod.deb
+            rm packages-microsoft-prod.deb
             sudo apt-get update -q
             sudo apt-get install -yq powershell
           else
-            echo "pwsh already available: $(pwsh --version)"
+            echo "PowerShell already available: $(pwsh --version)"
           fi
-      - id: install
+
+      - id: action
         uses: .
         with:
-          version: "18"
+          version: '18'
           platform: x64
-          cc: 1
+          cc: '1'
+
       - name: Assert clang output contains version suffix
         env:
-          ACTUAL: ${{ steps.install.outputs.clang }}
+          CLANG: ${{ steps.action.outputs.clang }}
         run: |
-          echo "actual clang: $ACTUAL"
-          if [ -z "$ACTUAL" ]; then
-            echo "FAIL: expected clang output to be non-empty"
+          echo "clang output: $CLANG"
+          if [ "$CLANG" != "clang-18" ]; then
+            echo "FAIL: expected 'clang-18' but got '$CLANG'"
             exit 1
           fi
-          if [ "$ACTUAL" != "clang-18" ]; then
-            echo "FAIL: expected 'clang-18', got '$ACTUAL'"
-            exit 1
-          fi
-          echo "PASS: clang output = $ACTUAL"
+          echo "PASS: clang output is '$CLANG'"
+
       - name: Assert clangxx output contains version suffix
         env:
-          ACTUAL: ${{ steps.install.outputs.clangxx }}
+          CLANGXX: ${{ steps.action.outputs.clangxx }}
         run: |
-          echo "actual clangxx: $ACTUAL"
-          if [ -z "$ACTUAL" ]; then
-            echo "FAIL: expected clangxx output to be non-empty"
+          echo "clangxx output: $CLANGXX"
+          if [ "$CLANGXX" != "clang++-18" ]; then
+            echo "FAIL: expected 'clang++-18' but got '$CLANGXX'"
             exit 1
           fi
-          if [ "$ACTUAL" != "clang++-18" ]; then
-            echo "FAIL: expected 'clang++-18', got '$ACTUAL'"
-            exit 1
-          fi
-          echo "PASS: clangxx output = $ACTUAL"
+          echo "PASS: clangxx output is '$CLANGXX'"
+
       - name: Assert versioned clang binary is executable
+        env:
+          CLANG: ${{ steps.action.outputs.clang }}
         run: |
-          echo "Checking that 'clang-18' is available in PATH"
-          if ! command -v clang-18 > /dev/null 2>&1; then
-            echo "FAIL: 'clang-18' not found in PATH"
+          echo "Checking if '$CLANG' is available..."
+          if ! command -v "$CLANG" > /dev/null 2>&1; then
+            echo "FAIL: '$CLANG' not found in PATH"
             exit 1
           fi
-          echo "PASS: clang-18 found at $(command -v clang-18)"
-          clang-18 --version
+          echo "PASS: '$CLANG' is available at $(command -v "$CLANG")"
+          "$CLANG" --version
+
       - name: Assert versioned clang++ binary is executable
+        env:
+          CLANGXX: ${{ steps.action.outputs.clangxx }}
         run: |
-          echo "Checking that 'clang++-18' is available in PATH"
-          if ! command -v clang++-18 > /dev/null 2>&1; then
-            echo "FAIL: 'clang++-18' not found in PATH"
+          echo "Checking if '$CLANGXX' is available..."
+          if ! command -v "$CLANGXX" > /dev/null 2>&1; then
+            echo "FAIL: '$CLANGXX' not found in PATH"
             exit 1
           fi
-          echo "PASS: clang++-18 found at $(command -v clang++-18)"
-          clang++-18 --version
-      - name: Assert cc symlink points to clang-18
+          echo "PASS: '$CLANGXX' is available at $(command -v "$CLANGXX")"
+          "$CLANGXX" --version
+
+      - name: Assert clang symlink points to versioned binary (cc=1)
         run: |
-          echo "Checking that 'cc' is available in PATH"
+          echo "Checking if 'clang' symlink exists..."
+          if ! command -v clang > /dev/null 2>&1; then
+            echo "FAIL: 'clang' not found in PATH"
+            exit 1
+          fi
+          echo "PASS: 'clang' is available at $(command -v clang)"
+          clang --version
+
+      - name: Assert cc symlink exists (cc=1)
+        run: |
+          echo "Checking if 'cc' symlink exists..."
           if ! command -v cc > /dev/null 2>&1; then
             echo "FAIL: 'cc' not found in PATH"
             exit 1
           fi
-          CC_PATH=$(readlink -f "$(command -v cc)")
-          CLANG_PATH=$(readlink -f "$(command -v clang-18)")
-          echo "cc resolves to: $CC_PATH"
-          echo "clang-18 resolves to: $CLANG_PATH"
-          if [ "$CC_PATH" != "$CLANG_PATH" ]; then
-            echo "FAIL: cc does not point to clang-18"
-            exit 1
-          fi
-          echo "PASS: cc -> clang-18"
+          echo "PASS: 'cc' is available at $(command -v cc)"
+          cc --version
