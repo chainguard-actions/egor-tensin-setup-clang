@@ -51,7 +51,7 @@ runs:
         New-Variable linux_host -Value ($os -eq 'Linux') -Option Constant
         New-Variable windows_host -Value ($os -eq 'Windows') -Option Constant
 
-        New-Variable version -Value $env:INPUT_VERSION -Option Constant
+        New-Variable version -Value ($env:INPUT_VERSION) -Option Constant
         New-Variable latest -Value ($version -eq 'latest') -Option Constant
         New-Variable x64 -Value ($env:INPUT_PLATFORM -eq 'x64') -Option Constant
 

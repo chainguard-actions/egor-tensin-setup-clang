@@ -8,21 +8,35 @@
 
 **Test Policy SHA:** `843adf9e4b8f85d0c08b27b9d0b09dd094b54702`
 
-**Harden Agent Version:** `1`
+**Harden Agent Version:** `2`
 
-Action **egor-tensin--setup-clang/v2.0** was hardened automatically. 5 finding(s) were identified and resolved across 1 iteration(s).
+Action **egor-tensin--setup-clang/v2.0** was hardened automatically. 6 finding(s) were identified and resolved across 2 iteration(s).
 
 ## Findings Fixed
 
 ### script-injection (severity: high)
 
-Both `run:` blocks in action.yml directly interpolate `${{ ... }}` expressions inside PowerShell script strings (rule a). This includes attacker-controllable inputs: `${{ inputs.version }}` (line 33), `${{ inputs.platform }}` (line 35), `${{ inputs.cc }}` (line 128), as well as `${{ runner.os }}` (lines 29, 124) and `${{ steps.install.outputs.clang }}`/`${{ steps.install.outputs.clangxx }}` (lines 130–131). GitHub Actions template substitution occurs before the shell parses the script, so a malicious value (e.g. `inputs.version = "'; Invoke-Expression ...; '"`) can inject arbitrary PowerShell commands.
+Step 1 (id: install) directly interpolates ${{ }} expressions inside a PowerShell run: block. GitHub Actions substitutes these values into the script text before PowerShell parses it, so an attacker-controlled value can break out of the string literal and inject arbitrary PowerShell commands. Offending lines:
+- `New-Variable os -Value '${{ runner.os }}' -Option Constant` (rule a: runner.* expression in run:)
+- `New-Variable version -Value ('${{ inputs.version }}') -Option Constant` (rule a: attacker-controlled inputs.*)
+- `New-Variable x64 -Value ('${{ inputs.platform }}' -eq 'x64') -Option Constant` (rule a: attacker-controlled inputs.*)
 
 Locations:
 
 - `action.yml:29`
 - `action.yml:33`
 - `action.yml:35`
+
+### script-injection (severity: high)
+
+Step 2 directly interpolates ${{ }} expressions inside a PowerShell run: block. GitHub Actions substitutes these values into the script text before PowerShell parses it, enabling command injection. Offending lines:
+- `New-Variable os -Value '${{ runner.os }}' -Option Constant` (rule a: runner.* expression in run:)
+- `New-Variable cc -Value ('${{ inputs.cc }}' -eq '1') -Option Constant` (rule a: attacker-controlled inputs.*)
+- `New-Variable clang -Value '${{ steps.install.outputs.clang }}' -Option Constant` (rule a: steps.*.outputs.* expression in run:)
+- `New-Variable clangxx -Value '${{ steps.install.outputs.clangxx }}' -Option Constant` (rule a: steps.*.outputs.* expression in run:)
+
+Locations:
+
 - `action.yml:124`
 - `action.yml:128`
 - `action.yml:130`
@@ -30,7 +44,9 @@ Locations:
 
 ### github-env-injection (severity: high)
 
-In step 1 of action.yml, the variables `$clang` and `$clangxx` are derived from the user-controlled input `${{ inputs.version }}` (interpolated at line 33 and used to build package/binary names). They are written unsanitized to `$env:GITHUB_OUTPUT` via `echo "clang=$clang" >> $env:GITHUB_OUTPUT` and `echo "clangxx=$clangxx" >> $env:GITHUB_OUTPUT`. No `printf '%s' ... | tr -d '\n\r'` sanitization is applied before the write. An attacker supplying a newline-containing `inputs.version` value could inject arbitrary key=value pairs into GITHUB_OUTPUT, poisoning downstream steps.
+Step 1 (id: install) writes $clang and $clangxx to $GITHUB_OUTPUT without sanitization. These variables are derived from ${{ inputs.version }} and ${{ inputs.platform }} (attacker-controlled inputs) via Format-UpstreamVersion and string concatenation. No `printf '%s' ... | tr -d '\n\r'` sanitization is applied before the write, allowing newline injection to poison GITHUB_OUTPUT.
+- `echo "clang=$clang" >> $env:GITHUB_OUTPUT`
+- `echo "clangxx=$clangxx" >> $env:GITHUB_OUTPUT`
 
 Locations:
 
@@ -69,13 +85,13 @@ Locations:
 
 **Notes:**
 
-Fixed all script-injection and github-env-injection findings in action.yml:
+Fixed all script injection findings in action.yml by moving all ${{ }} expressions from run: blocks into env: blocks for both steps. Step 1: moved runner.os, inputs.version, inputs.platform to env: INPUT_OS/INPUT_VERSION/INPUT_PLATFORM; Step 2: moved runner.os, inputs.cc, steps.install.outputs.clang, steps.install.outputs.clangxx to env: INPUT_OS/INPUT_CC/INPUT_CLANG/INPUT_CLANGXX. Fixed github-env-injection by sanitizing $clang and $clangxx with PowerShell's -replace '[\r\n]', '' before writing to $GITHUB_OUTPUT. All ${{ }} expressions in run: blocks have been eliminated.
 
-1. Step 1 (id: install): Moved ${{ runner.os }}, ${{ inputs.version }}, and ${{ inputs.platform }} from the run: block into an env: block as INPUT_OS, INPUT_VERSION, and INPUT_PLATFORM. The PowerShell script now reads $env:INPUT_OS, $env:INPUT_VERSION, and $env:INPUT_PLATFORM.
+### Iteration 2
 
-2. Step 1 GITHUB_OUTPUT writes: Added newline sanitization using PowerShell's -replace '[\r\n]', '' on $clang and $clangxx before writing to $env:GITHUB_OUTPUT, preventing newline injection.
+**Fixes applied:** script-injection, unpinned-uses, missing-permissions
 
-3. Step 2: Moved ${{ runner.os }}, ${{ inputs.cc }}, ${{ steps.install.outputs.clang }}, and ${{ steps.install.outputs.clangxx }} from the run: block into an env: block as INPUT_OS, INPUT_CC, INPUT_CLANG, and INPUT_CLANGXX. The PowerShell script now reads these from environment variables.
+**Notes:**
 
-The outputs: block value fields retain their ${{ steps.install.outputs.* }} expressions as required — these are not shell scripts and are safe.
+Fixed 4 findings: (1) build-foo/action.yml: moved ${{ inputs.version }}, ${{ matrix.platform }}, ${{ runner.os }}, and ${{ inputs.binary }} out of the run: shell string into an env: block, referencing them as $env:INPUT_VERSION, $env:MATRIX_PLATFORM, $env:RUNNER_OS_VAL, $env:INPUT_BINARY in PowerShell. (2) check-cc/action.yml: moved ${{ inputs.version }} into an env: block as INPUT_VERSION, referenced as $env:INPUT_VERSION in PowerShell. (3) test.yml: pinned actions/checkout@v6 → @d23441a48e516b6c34aea4fa41551a30e30af803 # v6 (both occurrences) and egor-tensin/cleanup-path@v4 → @cf0901d753db0bf4d15baf625a6fa537978b03a9 # v4. (4) test.yml: added top-level `permissions: contents: read` block.
 
