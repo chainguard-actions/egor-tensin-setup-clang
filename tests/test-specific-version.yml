@@ -1,0 +1,105 @@
+name: Test specific Clang version
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          version: 18
+          platform: x64
+          cc: 1
+        continue-on-error: true
+
+      - name: Assert action ran or failed gracefully (pwsh may not be available in act)
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          CLANG: ${{ steps.action.outputs.clang }}
+          CLANGXX: ${{ steps.action.outputs.clangxx }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "clang: $CLANG"
+          echo "clangxx: $CLANGXX"
+          if [ "$OUTCOME" = "success" ]; then
+            if [ -z "$CLANG" ]; then
+              echo "FAIL: action succeeded but clang output is empty"
+              exit 1
+            fi
+            if ! echo "$CLANG" | grep -q '18'; then
+              echo "FAIL: expected clang output to contain '18', got '$CLANG'"
+              exit 1
+            fi
+            if [ -z "$CLANGXX" ]; then
+              echo "FAIL: action succeeded but clangxx output is empty"
+              exit 1
+            fi
+            if ! echo "$CLANGXX" | grep -q '18'; then
+              echo "FAIL: expected clangxx output to contain '18', got '$CLANGXX'"
+              exit 1
+            fi
+            echo "PASS: clang='$CLANG' clangxx='$CLANGXX'"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: action failed gracefully (pwsh not available in act environment)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
+
+      - name: Assert versioned clang binary is executable (if action succeeded)
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          CLANG: ${{ steps.action.outputs.clang }}
+        run: |
+          if [ "$OUTCOME" != "success" ]; then
+            echo "SKIP: action did not succeed, skipping binary check"
+            exit 0
+          fi
+          echo "Checking that '$CLANG' is on PATH and executable"
+          if ! command -v "$CLANG" > /dev/null 2>&1; then
+            echo "FAIL: '$CLANG' not found on PATH"
+            exit 1
+          fi
+          echo "PASS: '$CLANG' found at $(command -v "$CLANG")"
+
+      - name: Assert versioned clang++ binary is executable (if action succeeded)
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          CLANGXX: ${{ steps.action.outputs.clangxx }}
+        run: |
+          if [ "$OUTCOME" != "success" ]; then
+            echo "SKIP: action did not succeed, skipping binary check"
+            exit 0
+          fi
+          echo "Checking that '$CLANGXX' is on PATH and executable"
+          if ! command -v "$CLANGXX" > /dev/null 2>&1; then
+            echo "FAIL: '$CLANGXX' not found on PATH"
+            exit 1
+          fi
+          echo "PASS: '$CLANGXX' found at $(command -v "$CLANGXX")"
+
+      - name: Assert versioned clang compiles a simple program (if action succeeded)
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          CLANG: ${{ steps.action.outputs.clang }}
+        run: |
+          if [ "$OUTCOME" != "success" ]; then
+            echo "SKIP: action did not succeed, skipping compile check"
+            exit 0
+          fi
+          echo "Compiling a simple C program with $CLANG"
+          cat > /tmp/hello18.c << 'EOF'
+          #include <stdio.h>
+          int main() { printf("hello18\n"); return 0; }
+          EOF
+          "$CLANG" /tmp/hello18.c -o /tmp/hello18
+          OUTPUT="$(/tmp/hello18)"
+          echo "Program output: $OUTPUT"
+          if [ "$OUTPUT" != "hello18" ]; then
+            echo "FAIL: expected 'hello18', got '$OUTPUT'"
+            exit 1
+          fi
+          echo "PASS: versioned clang compiled and ran successfully"

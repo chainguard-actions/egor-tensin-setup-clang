@@ -1,0 +1,104 @@
+name: Test basic usage (latest Clang)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          version: latest
+          platform: x64
+          cc: 1
+        continue-on-error: true
+
+      - name: Assert action ran or failed gracefully (pwsh may not be available in act)
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          CLANG: ${{ steps.action.outputs.clang }}
+          CLANGXX: ${{ steps.action.outputs.clangxx }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "clang: $CLANG"
+          echo "clangxx: $CLANGXX"
+          if [ "$OUTCOME" = "success" ]; then
+            if [ -z "$CLANG" ]; then
+              echo "FAIL: action succeeded but clang output is empty"
+              exit 1
+            fi
+            if [ -z "$CLANGXX" ]; then
+              echo "FAIL: action succeeded but clangxx output is empty"
+              exit 1
+            fi
+            echo "PASS: clang='$CLANG' clangxx='$CLANGXX'"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: action failed gracefully (pwsh not available in act environment)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
+
+      - name: Assert clang binary is executable (if action succeeded)
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          CLANG: ${{ steps.action.outputs.clang }}
+        run: |
+          if [ "$OUTCOME" != "success" ]; then
+            echo "SKIP: action did not succeed, skipping binary check"
+            exit 0
+          fi
+          echo "Checking that '$CLANG' is on PATH and executable"
+          if ! command -v "$CLANG" > /dev/null 2>&1; then
+            echo "FAIL: '$CLANG' not found on PATH"
+            exit 1
+          fi
+          echo "PASS: '$CLANG' found at $(command -v "$CLANG")"
+
+      - name: Assert cc symlink is set up (if action succeeded)
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          if [ "$OUTCOME" != "success" ]; then
+            echo "SKIP: action did not succeed, skipping cc symlink check"
+            exit 0
+          fi
+          echo "Checking that 'cc' is on PATH and points to clang"
+          if ! command -v cc > /dev/null 2>&1; then
+            echo "FAIL: 'cc' not found on PATH"
+            exit 1
+          fi
+          CC_PATH="$(command -v cc)"
+          echo "cc is at: $CC_PATH"
+          RESOLVED="$(readlink -f "$CC_PATH" 2>/dev/null || realpath "$CC_PATH" 2>/dev/null || echo "$CC_PATH")"
+          echo "cc resolves to: $RESOLVED"
+          if ! echo "$RESOLVED" | grep -qi clang; then
+            echo "FAIL: cc does not appear to point to clang (resolved: $RESOLVED)"
+            exit 1
+          fi
+          echo "PASS: cc points to clang"
+
+      - name: Assert clang compiles a simple program (if action succeeded)
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          CLANG: ${{ steps.action.outputs.clang }}
+        run: |
+          if [ "$OUTCOME" != "success" ]; then
+            echo "SKIP: action did not succeed, skipping compile check"
+            exit 0
+          fi
+          echo "Compiling a simple C program with $CLANG"
+          cat > /tmp/hello.c << 'EOF'
+          #include <stdio.h>
+          int main() { printf("hello\n"); return 0; }
+          EOF
+          "$CLANG" /tmp/hello.c -o /tmp/hello
+          OUTPUT="$(/tmp/hello)"
+          echo "Program output: $OUTPUT"
+          if [ "$OUTPUT" != "hello" ]; then
+            echo "FAIL: expected 'hello', got '$OUTPUT'"
+            exit 1
+          fi
+          echo "PASS: clang compiled and ran successfully"

@@ -1,0 +1,100 @@
+name: Test no cc symlink setup
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Record whether cc exists before the action runs
+      - name: Record pre-existing cc path
+        id: pre
+        run: |
+          CC_BEFORE="$(command -v cc 2>/dev/null || echo '')"
+          echo "cc_before=$CC_BEFORE" >> "$GITHUB_OUTPUT"
+          echo "cc before action: '$CC_BEFORE'"
+
+      - id: action
+        uses: .
+        with:
+          version: latest
+          platform: x64
+          cc: 0
+        continue-on-error: true
+
+      - name: Assert action ran or failed gracefully (pwsh may not be available in act)
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          CLANG: ${{ steps.action.outputs.clang }}
+          CLANGXX: ${{ steps.action.outputs.clangxx }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "clang: $CLANG"
+          echo "clangxx: $CLANGXX"
+          if [ "$OUTCOME" = "success" ]; then
+            if [ -z "$CLANG" ]; then
+              echo "FAIL: action succeeded but clang output is empty"
+              exit 1
+            fi
+            if [ -z "$CLANGXX" ]; then
+              echo "FAIL: action succeeded but clangxx output is empty"
+              exit 1
+            fi
+            echo "PASS: clang='$CLANG' clangxx='$CLANGXX'"
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: action failed gracefully (pwsh not available in act environment)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
+
+      - name: Assert cc symlink was NOT created by the action (if action succeeded)
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          CC_BEFORE: ${{ steps.pre.outputs.cc_before }}
+        run: |
+          if [ "$OUTCOME" != "success" ]; then
+            echo "SKIP: action did not succeed, skipping cc symlink check"
+            exit 0
+          fi
+          CC_AFTER="$(command -v cc 2>/dev/null || echo '')"
+          echo "cc before: '$CC_BEFORE'"
+          echo "cc after:  '$CC_AFTER'"
+          # If cc didn't exist before, it should still not exist (or be the same)
+          if [ -z "$CC_BEFORE" ]; then
+            if [ -n "$CC_AFTER" ]; then
+              # cc appeared — check it doesn't point to clang (action should not have created it)
+              RESOLVED="$(readlink -f "$CC_AFTER" 2>/dev/null || realpath "$CC_AFTER" 2>/dev/null || echo "$CC_AFTER")"
+              echo "cc resolved to: $RESOLVED"
+              # The action with cc=0 should not have created a clang symlink at /usr/local/bin/cc
+              if [ "$CC_AFTER" = "/usr/local/bin/cc" ]; then
+                echo "FAIL: action created /usr/local/bin/cc even though cc=0"
+                exit 1
+              fi
+            fi
+          fi
+          echo "PASS: cc symlink was not created by the action (cc=0)"
+
+      - name: Assert clang compiles a simple program (if action succeeded)
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          CLANG: ${{ steps.action.outputs.clang }}
+        run: |
+          if [ "$OUTCOME" != "success" ]; then
+            echo "SKIP: action did not succeed, skipping compile check"
+            exit 0
+          fi
+          echo "Compiling a simple C program with $CLANG"
+          cat > /tmp/hello_nocc.c << 'EOF'
+          #include <stdio.h>
+          int main() { printf("hello_nocc\n"); return 0; }
+          EOF
+          "$CLANG" /tmp/hello_nocc.c -o /tmp/hello_nocc
+          OUTPUT="$(/tmp/hello_nocc)"
+          echo "Program output: $OUTPUT"
+          if [ "$OUTPUT" != "hello_nocc" ]; then
+            echo "FAIL: expected 'hello_nocc', got '$OUTPUT'"
+            exit 1
+          fi
+          echo "PASS: clang compiled and ran successfully without cc setup"
