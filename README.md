@@ -13,6 +13,7 @@ Hardened by [Chainguard](https://www.chainguard.dev) from the upstream action at
 | v2.2 | [`v2.2`](https://github.com/chainguard-actions/egor-tensin-setup-clang/tree/v2.2) | [`8092a31`](https://github.com/egor-tensin/setup-clang/commit/8092a31dc33b0c41ee7cc5bb81fd0267490a0161) |
 | v2.3 | [`v2.3`](https://github.com/chainguard-actions/egor-tensin-setup-clang/tree/v2.3) | [`23bc15c`](https://github.com/egor-tensin/setup-clang/commit/23bc15cd4207e45f1566447deb48f4ff3ef932cb) |
 | v2.3.1 | [`v2.3.1`](https://github.com/chainguard-actions/egor-tensin-setup-clang/tree/v2.3.1) | [`b4ed276`](https://github.com/egor-tensin/setup-clang/commit/b4ed27662dc692ad1a7cb31b6e308802107d213a) |
+| v2.3.2 | [`v2.3.2`](https://github.com/chainguard-actions/egor-tensin-setup-clang/tree/v2.3.2) | [`19c51e1`](https://github.com/egor-tensin/setup-clang/commit/19c51e1271a66468025b47632fea01b6e605fe3d) |
 
 ## Privacy
 
