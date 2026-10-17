@@ -1,0 +1,76 @@
+name: Test cc=0 (no cc/clang symlinks)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install PowerShell Core
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -yq --no-install-recommends \
+            wget apt-transport-https software-properties-common
+          wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
+          sudo dpkg -i packages-microsoft-prod.deb
+          sudo apt-get update -q
+          sudo apt-get install -yq powershell
+          pwsh --version
+
+      - id: action
+        uses: .
+        with:
+          version: latest
+          platform: x64
+          cc: 0
+
+      - name: Assert clang output is set
+        env:
+          CLANG: ${{ steps.action.outputs.clang }}
+        run: |
+          echo "clang output: $CLANG"
+          if [ -z "$CLANG" ]; then
+            echo "FAIL: clang output is empty"
+            exit 1
+          fi
+          echo "PASS: clang output = $CLANG"
+
+      - name: Assert clangxx output is set
+        env:
+          CLANGXX: ${{ steps.action.outputs.clangxx }}
+        run: |
+          echo "clangxx output: $CLANGXX"
+          if [ -z "$CLANGXX" ]; then
+            echo "FAIL: clangxx output is empty"
+            exit 1
+          fi
+          echo "PASS: clangxx output = $CLANGXX"
+
+      - name: Assert clang binary is still installed (just no symlinks)
+        env:
+          CLANG: ${{ steps.action.outputs.clang }}
+        run: |
+          echo "Checking that '$CLANG' is on PATH (installed but no cc symlink)..."
+          if ! command -v "$CLANG" > /dev/null 2>&1; then
+            echo "FAIL: '$CLANG' not found on PATH"
+            exit 1
+          fi
+          echo "PASS: found $CLANG at $(command -v "$CLANG")"
+
+      - name: Assert cc does NOT point to clang (symlink not created)
+        run: |
+          echo "Checking that 'cc' was not set up to point to clang by this action..."
+          # With cc=0, the action should not have created the /usr/local/bin/cc -> clang link.
+          if command -v cc > /dev/null 2>&1; then
+            CC_PATH=$(readlink -f "$(command -v cc)" 2>/dev/null || command -v cc)
+            echo "cc resolves to: $CC_PATH"
+            # The link at /usr/local/bin/cc should not exist (action skipped it)
+            if [ -L /usr/local/bin/cc ]; then
+              echo "FAIL: /usr/local/bin/cc symlink was created despite cc=0"
+              exit 1
+            fi
+            echo "PASS: /usr/local/bin/cc symlink was not created by the action"
+          else
+            echo "PASS: 'cc' not on PATH (no symlink created)"
+          fi
