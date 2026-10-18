@@ -1,0 +1,76 @@
+name: Test cc=0 (no cc/c++ symlinks)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install PowerShell
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -yq --no-install-recommends wget apt-transport-https software-properties-common
+          wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
+          sudo dpkg -i packages-microsoft-prod.deb
+          sudo apt-get update -q
+          sudo apt-get install -yq powershell
+
+      - id: action
+        uses: .
+        with:
+          version: latest
+          platform: x64
+          cc: '0'
+
+      - name: Assert clang output is set
+        env:
+          CLANG: ${{ steps.action.outputs.clang }}
+        run: |
+          echo "clang output: $CLANG"
+          if [ -z "$CLANG" ]; then
+            echo "FAIL: clang output is empty"
+            exit 1
+          fi
+          echo "PASS: clang output is '$CLANG'"
+
+      - name: Assert clangxx output is set
+        env:
+          CLANGXX: ${{ steps.action.outputs.clangxx }}
+        run: |
+          echo "clang++ output: $CLANGXX"
+          if [ -z "$CLANGXX" ]; then
+            echo "FAIL: clangxx output is empty"
+            exit 1
+          fi
+          echo "PASS: clangxx output is '$CLANGXX'"
+
+      - name: Assert clang binary is available
+        env:
+          CLANG: ${{ steps.action.outputs.clang }}
+        run: |
+          echo "Checking that '$CLANG' is on PATH..."
+          if ! command -v "$CLANG" > /dev/null 2>&1; then
+            echo "FAIL: '$CLANG' not found on PATH"
+            exit 1
+          fi
+          echo "PASS: '$CLANG' is available"
+          "$CLANG" --version
+
+      - name: Assert cc does NOT point to clang (cc=0)
+        run: |
+          echo "Checking that 'cc' is not clang (cc input was 0)..."
+          if command -v cc > /dev/null 2>&1; then
+            CC_VERSION=$(cc --version 2>&1 | head -1)
+            echo "cc --version: $CC_VERSION"
+            # cc may exist as gcc; it should NOT be clang when cc=0
+            # The action only creates the symlink when cc=1, so if cc exists
+            # it should be the system default (gcc), not clang
+            if echo "$CC_VERSION" | grep -qi 'clang'; then
+              echo "FAIL: 'cc' points to clang but cc input was 0"
+              exit 1
+            fi
+            echo "PASS: 'cc' exists but is not clang (as expected)"
+          else
+            echo "PASS: 'cc' not found (no symlink created, as expected)"
+          fi

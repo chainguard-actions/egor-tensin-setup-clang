@@ -1,0 +1,28 @@
+name: Build threads.exe
+description: Build threads.exe
+inputs:
+  binary:
+    description: Compiler binary file name
+    required: false
+    default: clang++
+  platform:
+    description: Target platform
+    required: true
+runs:
+  using: composite
+  steps:
+    - env:
+        ARG_BINARY: ${{ inputs.binary }}
+        ARG_PLATFORM: ${{ inputs.platform }}
+      run: |
+        $flags = @()
+        if ($env:ARG_PLATFORM -eq 'x86') {
+            $flags += '-m32'
+        }
+        $flags += '-std=c++14','-o','test/threads.exe','test/threads.cpp'
+        if ('${{ runner.os }}' -eq 'Linux') {
+            $flags += '-lpthread'
+        }
+
+        & $env:ARG_BINARY $flags
+      shell: pwsh
