@@ -1,119 +1,62 @@
-name: Test basic usage (latest clang)
+name: Test basic usage (latest)
 on:
   workflow_dispatch:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Install PowerShell
+      - name: Install PowerShell (act image lacks pwsh)
         run: |
-          if ! command -v pwsh > /dev/null 2>&1; then
-            echo "Installing PowerShell..."
-            sudo apt-get update -q
-            sudo apt-get install -yq --no-install-recommends \
-              wget apt-transport-https software-properties-common
-            wget -q "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb"
-            sudo dpkg -i packages-microsoft-prod.deb
-            rm packages-microsoft-prod.deb
-            sudo apt-get update -q
-            sudo apt-get install -yq powershell
-          else
-            echo "PowerShell already available: $(pwsh --version)"
-          fi
-
+          set -e
+          if command -v pwsh >/dev/null 2>&1; then pwsh --version; exit 0; fi
+          SUDO=""; if command -v sudo >/dev/null 2>&1 && [ "$(id -u)" != "0" ]; then SUDO=sudo; fi
+          case "$(uname -m)" in
+            x86_64) ARCH=x64 ;;
+            aarch64|arm64) ARCH=arm64 ;;
+            *) echo "unsupported arch"; exit 1 ;;
+          esac
+          VER=7.4.6
+          URL="https://github.com/PowerShell/PowerShell/releases/download/v${VER}/powershell-${VER}-linux-${ARCH}.tar.gz"
+          if command -v curl >/dev/null 2>&1; then curl -fsSL "$URL" -o /tmp/pwsh.tgz; else wget -q "$URL" -O /tmp/pwsh.tgz; fi
+          $SUDO mkdir -p /opt/microsoft/powershell/7
+          $SUDO tar -xzf /tmp/pwsh.tgz -C /opt/microsoft/powershell/7
+          $SUDO chmod +x /opt/microsoft/powershell/7/pwsh
+          $SUDO ln -sf /opt/microsoft/powershell/7/pwsh /usr/local/bin/pwsh
+          $SUDO ln -sf /opt/microsoft/powershell/7/pwsh /usr/bin/pwsh
+          pwsh --version
       - id: action
         uses: .
-        with:
-          version: latest
-          platform: x64
-          cc: '1'
-
-      - name: Assert clang output is set
+      - name: Assert outputs
         env:
           CLANG: ${{ steps.action.outputs.clang }}
-        run: |
-          echo "clang output: $CLANG"
-          if [ -z "$CLANG" ]; then
-            echo "FAIL: clang output is empty"
-            exit 1
-          fi
-          echo "PASS: clang output is '$CLANG'"
-
-      - name: Assert clangxx output is set
-        env:
           CLANGXX: ${{ steps.action.outputs.clangxx }}
         run: |
-          echo "clangxx output: $CLANGXX"
-          if [ -z "$CLANGXX" ]; then
-            echo "FAIL: clangxx output is empty"
-            exit 1
-          fi
-          echo "PASS: clangxx output is '$CLANGXX'"
-
-      - name: Assert clang output equals 'clang' for latest
-        env:
-          CLANG: ${{ steps.action.outputs.clang }}
-        run: |
-          echo "clang output: $CLANG"
+          echo "clang: $CLANG"
+          echo "clangxx: $CLANGXX"
           if [ "$CLANG" != "clang" ]; then
-            echo "FAIL: expected 'clang' but got '$CLANG'"
+            echo "FAIL: expected clang output 'clang'"
             exit 1
           fi
-          echo "PASS"
-
-      - name: Assert clangxx output equals 'clang++' for latest
-        env:
-          CLANGXX: ${{ steps.action.outputs.clangxx }}
-        run: |
-          echo "clangxx output: $CLANGXX"
           if [ "$CLANGXX" != "clang++" ]; then
-            echo "FAIL: expected 'clang++' but got '$CLANGXX'"
+            echo "FAIL: expected clangxx output 'clang++'"
             exit 1
           fi
           echo "PASS"
-
-      - name: Assert clang binary is executable
-        env:
-          CLANG: ${{ steps.action.outputs.clang }}
+      - name: Assert clang binaries are available
         run: |
-          echo "Checking if '$CLANG' is available..."
-          if ! command -v "$CLANG" > /dev/null 2>&1; then
-            echo "FAIL: '$CLANG' not found in PATH"
-            exit 1
-          fi
-          echo "PASS: '$CLANG' is available at $(command -v "$CLANG")"
-          "$CLANG" --version
-
-      - name: Assert clang++ binary is executable
-        env:
-          CLANGXX: ${{ steps.action.outputs.clangxx }}
+          clang --version || { echo "FAIL: clang not runnable"; exit 1; }
+          clang++ --version || { echo "FAIL: clang++ not runnable"; exit 1; }
+          echo "PASS"
+      - name: Assert cc/c++ links point to clang
         run: |
-          echo "Checking if '$CLANGXX' is available..."
-          if ! command -v "$CLANGXX" > /dev/null 2>&1; then
-            echo "FAIL: '$CLANGXX' not found in PATH"
-            exit 1
-          fi
-          echo "PASS: '$CLANGXX' is available at $(command -v "$CLANGXX")"
-          "$CLANGXX" --version
-
-      - name: Assert cc symlink exists (cc=1)
-        run: |
-          echo "Checking if 'cc' symlink exists..."
-          if ! command -v cc > /dev/null 2>&1; then
-            echo "FAIL: 'cc' not found in PATH"
-            exit 1
-          fi
-          echo "PASS: 'cc' is available at $(command -v cc)"
-          cc --version
-
-      - name: Assert c++ symlink exists (cc=1)
-        run: |
-          echo "Checking if 'c++' symlink exists..."
-          if ! command -v c++ > /dev/null 2>&1; then
-            echo "FAIL: 'c++' not found in PATH"
-            exit 1
-          fi
-          echo "PASS: 'c++' is available at $(command -v c++)"
-          c++ --version
+          ls -l /usr/local/bin/cc /usr/local/bin/c++ || { echo "FAIL: links missing"; exit 1; }
+          cc_out="$(/usr/local/bin/cc --version)"
+          cxx_out="$(/usr/local/bin/c++ --version)"
+          echo "$cc_out"
+          echo "$cxx_out"
+          echo "$cc_out" | grep -qi clang || { echo "FAIL: cc is not clang"; exit 1; }
+          echo "$cxx_out" | grep -qi clang || { echo "FAIL: c++ is not clang"; exit 1; }
+          echo "PASS"

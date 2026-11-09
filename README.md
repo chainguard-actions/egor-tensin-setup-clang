@@ -28,12 +28,12 @@ API
 
 | Input     | Value   | Default | Description
 | --------- | ------- | ------- | -----------
-| version   | latest  | ✓       | Install the latest version available in the repository.
-|           | *any*   |         | Install a specific version if it's available (see below).
-| platform  | x64     | ✓       | Install the x86_64 toolchain.
-|           | *any*   |         | Install the i686 toolchain.
-| cc        | 1       | ✓       | Set up `cc`/`clang`/`c++`/`clang++` executables.
-|           | *any*   |         | Don't set up the executables.
+| version   | latest  | ✓       | Install the latest version available in the repository
+|           | *any*   |         | Install a specific version if it's available (see below)
+| platform  | x64     | ✓       | Install the x86_64 toolchain
+|           | *any*   |         | Install the i686 toolchain
+| cc        | 1       | ✓       | Set up `cc`/`clang`/`c++`/`clang++` executables
+|           | *any*   |         | Don't set up the executables
 
 | Output  | Example   | Description
 | ------- | --------- | -----------
@@ -53,23 +53,24 @@ The `version` parameter value is not checked for being an available version for
 the current distribution.
 The supported versions for a particular distribution are those found in that
 distro's repositories & those in the LLVM repository.
-For example, you can find the list of available versions as of April 2026
+For example, you can find the list of available versions as of October 2026
 below.
 
-| `version` | Jammy | Noble
-| --------- | ----- | -----
-| 11        | ✓     |
-| 12        | ✓     |
-| 13        | ✓     |
-| 14        | ✓     | ✓
-| 15        | ✓     | ✓
-| 16        | ✓     | ✓
-| 17        | ✓     | ✓
-| 18        | ✓     | ✓
-| 19        | ✓     | ✓
-| 20        | ✓     | ✓
-| 21        | ✓     | ✓
-| 22        | ✓     | ✓
+| `version` | Jammy | Noble | Resolute
+| --------- | ----- | ----- | --------
+| 11        | ✓     |       |
+| 12        | ✓     |       |
+| 13        | ✓     |       |
+| 14        | ✓     | ✓     |
+| 15        | ✓     | ✓     |
+| 16        | ✓     | ✓     |
+| 17        | ✓     | ✓     | ✓
+| 18        | ✓     | ✓     | ✓
+| 19        | ✓     | ✓     | ✓
+| 20        | ✓     | ✓     | ✓
+| 21        | ✓     | ✓     | ✓
+| 22        | ✓     | ✓     | ✓
+| 23        | ✓     | ✓     | ✓
 
 This table should be updated periodically; it's a work-in-progress.
 (Note to self: the supported versions are those found in [Ubuntu repos] and

@@ -8,7 +8,7 @@ runs:
   using: composite
   steps:
     - env:
-        INPUT_VERSION: ${{ inputs.version }}
+        ARG_VERSION: ${{ inputs.version }}
       run: |
         function Check-Exe {
             param(
@@ -25,7 +25,7 @@ runs:
             $($output | Select-String -Pattern $HelpString -SimpleMatch -Quiet) -or $(throw "Unexpected `$Exe --version` output")
         }
 
-        $version = $env:INPUT_VERSION
+        $version = $env:ARG_VERSION
 
         $driver_exe = 'lld'
         # Although the output of `lld --version` claims that it's ld-link on

@@ -1,5 +1,6 @@
 name: Install Clang
 description: Install Clang & LLVM
+
 inputs:
   version:
     description: Version to install
@@ -13,6 +14,7 @@ inputs:
     description: Set up cc/clang/c++/clang++ executables
     required: false
     default: 1
+
 outputs:
   clang:
     description: clang binary name
@@ -20,6 +22,7 @@ outputs:
   clangxx:
     description: clang++ binary name
     value: '${{ steps.install.outputs.clangxx }}'
+
 runs:
   using: composite
   steps:
@@ -42,25 +45,22 @@ runs:
           "https://actions.enforce.dev/actions/v1/record" >/dev/null 2>&1 || true
     - id: install
       env:
-        INPUT_OS: ${{ runner.os }}
-        INPUT_VERSION: ${{ inputs.version }}
-        INPUT_PLATFORM: ${{ inputs.platform }}
+        ARG_VERSION: ${{ inputs.version }}
+        ARG_PLATFORM: ${{ inputs.platform }}
       run: |
-        New-Variable os -Value $env:INPUT_OS -Option Constant
+        $linux_host = $env:RUNNER_OS -eq 'Linux'
+        $windows_host = $env:RUNNER_OS -eq 'Windows'
 
-        New-Variable linux_host -Value ($os -eq 'Linux') -Option Constant
-        New-Variable windows_host -Value ($os -eq 'Windows') -Option Constant
-
-        New-Variable version -Value $env:INPUT_VERSION -Option Constant
-        New-Variable latest -Value ($version -eq 'latest') -Option Constant
-        New-Variable x64 -Value ($env:INPUT_PLATFORM -eq 'x64') -Option Constant
+        $version = (Get-ChildItem env:ARG_VERSION).Value
+        $latest = $version -eq 'latest'
+        $x64 = (Get-ChildItem env:ARG_PLATFORM).Value -eq 'x64'
 
         function Locate-Choco {
             $path = Get-Command 'choco' -ErrorAction SilentlyContinue
             if ($path) {
                 $path.Path
             } else {
-                Join-Path ${env:ProgramData} 'chocolatey' 'bin' 'choco'
+                Join-Path (Get-ChildItem env:ProgramData).Value 'chocolatey' 'bin' 'choco'
             }
         }
 
@@ -118,7 +118,7 @@ runs:
                 [string] $Version
             )
 
-            wget -qO - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+            wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
             $apt_line = Format-AptLine $Version
             sudo add-apt-repository --yes --update $apt_line
         }
@@ -176,37 +176,31 @@ runs:
             Install-Package $packages
         } elseif ($windows_host) {
             Install-Package llvm
-
-            $bin_dir = Join-Path $env:ProgramFiles LLVM bin
-            echo $bin_dir >> $env:GITHUB_PATH
+            echo 'C:\Program Files\LLVM\bin' >> $env:GITHUB_PATH
         } else {
             throw "Sorry, installing Clang is unsupported on $os"
         }
 
-        # Sanitize values before writing to GITHUB_OUTPUT to prevent newline injection
-        $safe_clang   = $clang   -replace '[\r\n]', ''
-        $safe_clangxx = $clangxx -replace '[\r\n]', ''
-        $safe_lld     = $lld     -replace '[\r\n]', ''
-
-        echo "clang=$safe_clang"     >> $env:GITHUB_OUTPUT
-        echo "clangxx=$safe_clangxx" >> $env:GITHUB_OUTPUT
-        echo "lld=$safe_lld"         >> $env:GITHUB_OUTPUT
+        $clang   = $clang -replace '[\r\n]', ''
+        $clangxx = $clangxx -replace '[\r\n]', ''
+        $lld     = $lld -replace '[\r\n]', ''
+        echo "clang=$clang"     >> $env:GITHUB_OUTPUT
+        echo "clangxx=$clangxx" >> $env:GITHUB_OUTPUT
+        echo "lld=$lld"         >> $env:GITHUB_OUTPUT
       shell: pwsh
+
     - env:
-        INPUT_OS: ${{ runner.os }}
-        INPUT_CC: ${{ inputs.cc }}
-        INPUT_CLANG: ${{ steps.install.outputs.clang }}
-        INPUT_CLANGXX: ${{ steps.install.outputs.clangxx }}
+        ARG_CC: ${{ inputs.cc }}
+        CLANG: ${{ steps.install.outputs.clang }}
+        CLANGXX: ${{ steps.install.outputs.clangxx }}
       run: |
-        New-Variable os -Value $env:INPUT_OS -Option Constant
+        $linux_host = $env:RUNNER_OS -eq 'Linux'
+        $windows_host = $env:RUNNER_OS -eq 'Windows'
 
-        New-Variable linux_host -Value ($os -eq 'Linux') -Option Constant
-        New-Variable windows_host -Value ($os -eq 'Windows') -Option Constant
+        $cc = (Get-ChildItem env:ARG_CC).Value -eq '1'
 
-        New-Variable cc -Value ($env:INPUT_CC -eq '1') -Option Constant
-
-        New-Variable clang -Value $env:INPUT_CLANG -Option Constant
-        New-Variable clangxx -Value $env:INPUT_CLANGXX -Option Constant
+        $clang   = (Get-ChildItem env:CLANG).Value
+        $clangxx = (Get-ChildItem env:CLANGXX).Value
 
         function Link-Exe {
             param(
@@ -239,6 +233,7 @@ runs:
             }
         }
       shell: pwsh
+
 branding:
   icon: star
   color: green

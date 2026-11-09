@@ -1,0 +1,58 @@
+name: Test cc links disabled
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Install PowerShell (act image lacks pwsh)
+        run: |
+          set -e
+          if command -v pwsh >/dev/null 2>&1; then pwsh --version; exit 0; fi
+          SUDO=""; if command -v sudo >/dev/null 2>&1 && [ "$(id -u)" != "0" ]; then SUDO=sudo; fi
+          case "$(uname -m)" in
+            x86_64) ARCH=x64 ;;
+            aarch64|arm64) ARCH=arm64 ;;
+            *) echo "unsupported arch"; exit 1 ;;
+          esac
+          VER=7.4.6
+          URL="https://github.com/PowerShell/PowerShell/releases/download/v${VER}/powershell-${VER}-linux-${ARCH}.tar.gz"
+          if command -v curl >/dev/null 2>&1; then curl -fsSL "$URL" -o /tmp/pwsh.tgz; else wget -q "$URL" -O /tmp/pwsh.tgz; fi
+          $SUDO mkdir -p /opt/microsoft/powershell/7
+          $SUDO tar -xzf /tmp/pwsh.tgz -C /opt/microsoft/powershell/7
+          $SUDO chmod +x /opt/microsoft/powershell/7/pwsh
+          $SUDO ln -sf /opt/microsoft/powershell/7/pwsh /usr/local/bin/pwsh
+          $SUDO ln -sf /opt/microsoft/powershell/7/pwsh /usr/bin/pwsh
+          pwsh --version
+      - name: Remove any pre-existing links
+        run: sudo rm -f /usr/local/bin/cc /usr/local/bin/c++ || rm -f /usr/local/bin/cc /usr/local/bin/c++ || true
+      - id: action
+        uses: .
+        with:
+          cc: '0'
+      - name: Assert outputs
+        env:
+          CLANG: ${{ steps.action.outputs.clang }}
+          CLANGXX: ${{ steps.action.outputs.clangxx }}
+        run: |
+          echo "clang: $CLANG"
+          echo "clangxx: $CLANGXX"
+          if [ "$CLANG" != "clang" ] || [ "$CLANGXX" != "clang++" ]; then
+            echo "FAIL: unexpected outputs"
+            exit 1
+          fi
+          clang --version || { echo "FAIL: clang not installed"; exit 1; }
+          echo "PASS"
+      - name: Assert no cc/c++ links were created
+        run: |
+          for l in /usr/local/bin/cc /usr/local/bin/c++; do
+            if [ -e "$l" ] || [ -L "$l" ]; then
+              ls -l "$l"
+              echo "FAIL: $l should not have been created with cc=0"
+              exit 1
+            fi
+          done
+          echo "PASS"
