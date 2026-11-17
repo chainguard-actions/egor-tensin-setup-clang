@@ -7,9 +7,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - env:
-        INPUT_VERSION: ${{ inputs.version }}
-      run: |
+    - run: |
         function Check-Exe {
             param(
                 [Parameter(Mandatory=$true)]
@@ -22,7 +20,7 @@ runs:
 
             $($output | Select-String -Pattern "clang version" -SimpleMatch -Quiet) -or $(throw "Unexpected `$Exe --version` output")
 
-            $version = $env:INPUT_VERSION
+            $version = '${{ inputs.version }}'
             if ($version) {
                 $($output | Select-String -Pattern "$script:version." -SimpleMatch -Quiet) -or $(throw "Unexpected `$Exe --version` output")
             }

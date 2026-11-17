@@ -11,23 +11,18 @@ inputs:
 runs:
   using: composite
   steps:
-    - env:
-        INPUT_VERSION: ${{ inputs.version }}
-        MATRIX_PLATFORM: ${{ matrix.platform }}
-        RUNNER_OS_VAL: ${{ runner.os }}
-        INPUT_BINARY: ${{ inputs.binary }}
-      run: |
-        $version = $env:INPUT_VERSION
+    - run: |
+        $version = '${{ inputs.version }}'
         $version = if ($version) { "-$version" } else { $version }
 
         $flags = @()
-        if ($env:MATRIX_PLATFORM -eq 'x86') {
+        if ('${{ matrix.platform }}' -eq 'x86') {
             $flags += '-m32'
         }
         $flags += '-std=c++14','-o','foo.exe','foo.cpp'
-        if ($env:RUNNER_OS_VAL -eq 'Linux') {
+        if ('${{ runner.os }}' -eq 'Linux') {
             $flags += '-lpthread'
         }
 
-        & $env:INPUT_BINARY $flags
+        & '${{ inputs.binary }}' $flags
       shell: pwsh

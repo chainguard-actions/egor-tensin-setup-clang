@@ -1,5 +1,6 @@
 name: Install Clang
 description: Install Clang & LLVM
+
 inputs:
   version:
     description: Version to install
@@ -13,6 +14,7 @@ inputs:
     description: Set up cc/clang/c++/clang++ executables
     required: false
     default: 1
+
 outputs:
   clang:
     description: clang binary name
@@ -20,6 +22,7 @@ outputs:
   clangxx:
     description: clang++ binary name
     value: '${{ steps.install.outputs.clangxx }}'
+
 runs:
   using: composite
   steps:
@@ -151,7 +154,8 @@ runs:
             Install-Package llvm
 
             $bin_dir = Join-Path $env:ProgramFiles LLVM bin
-            echo $bin_dir >> $env:GITHUB_PATH
+            $safe_bin_dir = $bin_dir -replace '[\r\n]', ''
+            echo $safe_bin_dir >> $env:GITHUB_PATH
         } else {
             throw "Sorry, installing Clang is unsupported on $os"
         }
@@ -161,6 +165,7 @@ runs:
         echo "clang=$safe_clang"     >> $env:GITHUB_OUTPUT
         echo "clangxx=$safe_clangxx" >> $env:GITHUB_OUTPUT
       shell: pwsh
+
     - env:
         INPUT_OS: ${{ runner.os }}
         INPUT_CC: ${{ inputs.cc }}
@@ -208,6 +213,7 @@ runs:
             }
         }
       shell: pwsh
+
 branding:
   icon: star
   color: green
