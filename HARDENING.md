@@ -4,54 +4,109 @@
 
 > This file was generated automatically by the hardening agent.
 
-**Policy SHA:** `d636be7e43ef829af6e853da6b3c7566db9f72fe`
+**Policy SHA:** `374911c4be584df24e6da57af2d990570ef0f859`
 
 **Test Policy SHA:** `843adf9e4b8f85d0c08b27b9d0b09dd094b54702`
 
 **Harden Agent Version:** `2`
 
-Action **egor-tensin--setup-clang/v2.3.3** was hardened automatically. 3 finding(s) were identified and resolved across 1 iteration(s).
+Action **egor-tensin--setup-clang/v2.3.3** was hardened automatically. 4 finding(s) were identified and resolved across 1 iteration(s).
 
 ## Findings Fixed
 
 ### script-injection (severity: high)
 
-Sub-rule (a): `${{ runner.os }}` is directly interpolated inside the `run:` PowerShell shell script in step 1 (the 'install' step). Any `${{ ... }}` expression directly inside a `run:` block is a script-injection finding, as the value flows through YAML template substitution before the shell processes it. Offending lines: `$linux_host = '${{ runner.os }}' -eq 'Linux'` and `$windows_host = '${{ runner.os }}' -eq 'Windows'`. Fix: use the environment variable `$env:RUNNER_OS` instead of the expression.
+Rule (a): a GitHub Actions expression is placed straight into the pwsh run: script of the 'install' step: `$linux_host = '${{ runner.os }}' -eq 'Linux'` and `$windows_host = '${{ runner.os }}' -eq 'Windows'`. Read $env:RUNNER_OS instead.
 
 Locations:
 
+- `action.yml:34`
 - `action.yml:35`
-- `action.yml:36`
 
 ### script-injection (severity: high)
 
-Sub-rule (a): `${{ runner.os }}` is directly interpolated inside the `run:` PowerShell shell script in step 2 (the symlink/cc setup step). Same pattern as step 1 — the expression is substituted into the shell command string before execution. Offending lines: `$linux_host = '${{ runner.os }}' -eq 'Linux'` and `$windows_host = '${{ runner.os }}' -eq 'Windows'`. Fix: use `$env:RUNNER_OS` instead.
+Rule (a): a GitHub Actions expression is placed straight into the pwsh run: script of the second (link) step: `$linux_host = '${{ runner.os }}' -eq 'Linux'` and `$windows_host = '${{ runner.os }}' -eq 'Windows'`. Read $env:RUNNER_OS instead.
 
 Locations:
 
-- `action.yml:155`
-- `action.yml:156`
+- `action.yml:177`
+- `action.yml:178`
 
 ### github-env-injection (severity: high)
 
-Step 1 ('install') writes `$clang`, `$clangxx`, and `$lld` to `$GITHUB_OUTPUT` without sanitization. These values are derived from `$version`, which is read from the `ARG_VERSION` environment variable set to `${{ inputs.version }}` — an untrusted caller-controlled input. An attacker can inject newlines into `inputs.version` to poison `$GITHUB_OUTPUT`. The required sanitization step (`printf '%s' "$value" | tr -d '\n\r'`) is absent before each write. Offending lines: `echo "clang=$clang" >> $env:GITHUB_OUTPUT`, `echo "clangxx=$clangxx" >> $env:GITHUB_OUTPUT`, `echo "lld=$lld" >> $env:GITHUB_OUTPUT`.
+The 'install' step writes values built from untrusted input to $env:GITHUB_OUTPUT without removing newlines first. When version is not 'latest', $clang, $clangxx and $lld are built as "$clang-$pkg_version", and $pkg_version comes from inputs.version (env ARG_VERSION). They are then written with `echo "clang=$clang" >> $env:GITHUB_OUTPUT` (and the same for clangxx and lld). Strip CR/LF from the version (e.g. -replace '[\r\n]','') or check that it is numeric before using it.
 
 Locations:
 
-- `action.yml:143`
-- `action.yml:144`
-- `action.yml:145`
+- `action.yml:167`
+- `action.yml:168`
+- `action.yml:169`
+
+### prior-fix (severity: high)
+
+Carried forward from this version's previous harden, which fixed it; fix it again unless the code no longer has the problem. The previous harden changed action.yml without recording a finding for it, and this analysis reported nothing there. Re-apply its security changes unless the code no longer needs them. The previous patch:
+```diff
+diff --git a/action.yml b/action.yml
+index 1a0af3c..93346e6 100644
+--- a/action.yml
++++ b/action.yml
+@@ -26,13 +26,30 @@ outputs:
+ runs:
+   using: composite
+   steps:
+     - id: install
+       env:
+         ARG_VERSION: ${{ inputs.version }}
+         ARG_PLATFORM: ${{ inputs.platform }}
+       run: |
+-        $linux_host = '${{ runner.os }}' -eq 'Linux'
+-        $windows_host = '${{ runner.os }}' -eq 'Windows'
++        $linux_host = $env:RUNNER_OS -eq 'Linux'
++        $windows_host = $env:RUNNER_OS -eq 'Windows'
+ 
+         $version = (Get-ChildItem env:ARG_VERSION).Value
+         $latest = $version -eq 'latest'
+@@ -164,9 +181,12 @@ runs:
+             throw "Sorry, installing Clang is unsupported on $os"
+         }
+ 
+-        echo "clang=$clang"     >> $env:GITHUB_OUTPUT
+-        echo "clangxx=$clangxx" >> $env:GITHUB_OUTPUT
+-        echo "lld=$lld"         >> $env:GITHUB_OUTPUT
++        $safe_clang   = $clang   -replace '[\r\n]', ''
++        $safe_clangxx = $clangxx -replace '[\r\n]', ''
++        $safe_lld     = $lld     -replace '[\r\n]', ''
++        echo "clang=$safe_clang"     >> $env:GITHUB_OUTPUT
++        echo "clangxx=$safe_clangxx" >> $env:GITHUB_OUTPUT
++        echo "lld=$safe_lld"         >> $env:GITHUB_OUTPUT
+       shell: pwsh
+ 
+     - env:
+@@ -174,8 +194,8 @@ runs:
+         CLANG: ${{ steps.install.outputs.clang }}
+         CLANGXX: ${{ steps.install.outputs.clangxx }}
+       run: |
+-        $linux_host = '${{ runner.os }}' -eq 'Linux'
+-        $windows_host = '${{ runner.os }}' -eq 'Windows'
++        $linux_host = $env:RUNNER_OS -eq 'Linux'
++        $windows_host = $env:RUNNER_OS -eq 'Windows'
+ 
+         $cc = (Get-ChildItem env:ARG_CC).Value -eq '1'
+ 
+
+```
+
+Locations:
+
+- `action.yml`
 
 ## Iteration Notes
 
 ### Iteration 1
 
-**Fixes applied:** script-injection, github-env-injection
+**Fixes applied:** script-injection, github-env-injection, prior-fix
 
 **Notes:**
 
-Fixed three findings in hardened/action/action.yml:
-1. Script injection (step 1): Replaced `'${{ runner.os }}'` with `$env:RUNNER_OS` in the PowerShell run block. PowerShell accesses environment variables via `$env:RUNNER_OS`, which is the correct idiomatic form and avoids YAML template substitution.
-2. Script injection (step 2): Same fix applied to the second step's PowerShell run block.
-3. GitHub env injection: Added sanitization before writing clang, clangxx, and lld values to $GITHUB_OUTPUT. Used PowerShell's `-replace '[\r\n]', ''` to strip carriage return and newline characters from values derived from the caller-controlled `inputs.version` input, preventing newline injection attacks on $GITHUB_OUTPUT.
+In both pwsh steps, '${{ runner.os }}' now reads $env:RUNNER_OS. The install step now removes CR/LF from $clang, $clangxx and $lld (-replace '[\r\n]','') before writing them to $env:GITHUB_OUTPUT. This puts back the changes from the previous harden. Nothing has been run or tested yet.
 
